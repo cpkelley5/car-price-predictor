@@ -789,6 +789,223 @@ if DATABASE_AVAILABLE and st.session_state.get('show_admin', False):
                 st.markdown(f"**[📄 Download Window Sticker PDF]({sticker_url})**")
                 st.info("💡 **Manual Process**: Click the link above to download the PDF in your browser, then use the manual entry form below.")
         
+        # PDF Upload Section
+        st.subheader("📄 Upload Window Sticker PDFs")
+        st.info("💡 **Drag & Drop**: Simply drag PDF files here or click to browse - processing happens automatically!")
+        
+        uploaded_files = st.file_uploader(
+            "Drag and drop PDF files here", 
+            type=['pdf'], 
+            accept_multiple_files=True,
+            help="Drag window sticker PDF files directly onto this area for instant processing",
+            label_visibility="collapsed"
+        )
+        
+        if uploaded_files:
+                with st.spinner("Processing PDF files..."):
+                    results = []
+                    
+                    for uploaded_file in uploaded_files:
+                        try:
+                            # Read PDF content
+                            pdf_bytes = uploaded_file.read()
+                            
+                            # Extract text using existing PDF parsing
+                            import sys
+                            import os
+                            sys.path.append(os.path.join(os.path.dirname(__file__), 'sticker-scraper'))
+                            from sticker_scraper import pdf_to_text, parse_sticker_text
+                            text = pdf_to_text(pdf_bytes)
+                            
+                            if not text or len(text.strip()) < 50:
+                                results.append({
+                                    'file': uploaded_file.name,
+                                    'status': 'error',
+                                    'message': 'Could not extract text from PDF (may be scanned image)',
+                                    'vin': None
+                                })
+                                continue
+                            
+                            # Enhanced parsing for Hyundai window stickers
+                            import re
+                            
+                            # Extract VIN (appears multiple times in the format)
+                            vin_match = re.search(r'VIN:\s*([A-HJ-NPR-Z0-9]{17})', text)
+                            if not vin_match:
+                                # Fallback to any 17-character VIN pattern
+                                vin_match = re.search(r'\b([A-HJ-NPR-Z0-9]{17})\b', text)
+                            
+                            if not vin_match:
+                                results.append({
+                                    'file': uploaded_file.name,
+                                    'status': 'error', 
+                                    'message': 'Could not find valid VIN in PDF',
+                                    'vin': None
+                                })
+                                continue
+                            
+                            vin = vin_match.group(1)
+                            
+                            # Enhanced parsing for this specific format
+                            def parse_hyundai_sticker(vin_code, sticker_text):
+                                data = {'VIN': vin_code}
+                                
+                                # Extract model year and trim from title line
+                                title_match = re.search(r'(\d{4})\s+PALISADE\s+([A-Z\s]+)', sticker_text)
+                                if title_match:
+                                    data['ModelYear'] = title_match.group(1)
+                                    data['Trim'] = title_match.group(2).strip()
+                                
+                                # Extract drivetrain
+                                if 'FWD' in sticker_text:
+                                    data['Drivetrain'] = 'FWD'
+                                elif 'AWD' in sticker_text:
+                                    data['Drivetrain'] = 'AWD'
+                                
+                                # Extract seating from captain's chairs mention
+                                if "Captain's Chairs" in sticker_text:
+                                    data['Seats'] = '7'
+                                elif '8-passenger' in sticker_text.lower():
+                                    data['Seats'] = '8'
+                                
+                                # Extract engine
+                                engine_match = re.search(r'(3\.5L V6 Engine)', sticker_text)
+                                if engine_match:
+                                    data['Engine'] = engine_match.group(1)
+                                
+                                # Extract colors
+                                ext_color_match = re.search(r'EXTERIOR COLOR:\s*([A-Z\s/]+)', sticker_text)
+                                if ext_color_match:
+                                    data['ExteriorColor'] = ext_color_match.group(1).strip()
+                                
+                                int_color_match = re.search(r'INTERIOR/SEAT COLOR:\s*([A-Z\s/]+)', sticker_text)
+                                if int_color_match:
+                                    data['InteriorColor'] = int_color_match.group(1).strip()
+                                
+                                # Extract pricing (more robust)
+                                msrp_match = re.search(r'Manufacturer\'s Suggested Retail Price:\s*\$?([\d,]+\.?\d*)', sticker_text)
+                                if msrp_match:
+                                    data['BaseMSRP'] = float(msrp_match.group(1).replace(',', ''))
+                                
+                                freight_match = re.search(r'Inland Freight & Handling\s*:\s*\$?([\d,]+\.?\d*)', sticker_text)
+                                if freight_match:
+                                    data['DestinationCharge'] = float(freight_match.group(1).replace(',', ''))
+                                    
+                                total_match = re.search(r'Total Price\s*:\s*\$?([\d,]+\.?\d*)', sticker_text)
+                                if total_match:
+                                    data['TotalMSRP'] = float(total_match.group(1).replace(',', ''))
+                                
+                                # Extract added features/options
+                                features_section = re.search(r'ADDED FEATURES:(.*?)(?:Inland Freight|$)', sticker_text, re.DOTALL)
+                                if features_section:
+                                    features_text = features_section.group(1)
+                                    # Parse individual features
+                                    feature_lines = []
+                                    for line in features_text.split('\n'):
+                                        line = line.strip()
+                                        if line.startswith('*') and '$' in line:
+                                            feature_lines.append(line.replace('*', '').strip())
+                                    if feature_lines:
+                                        data['Options'] = '; '.join(feature_lines)
+                                
+                                return data
+                            
+                            # Use enhanced parsing
+                            parsed_data = parse_hyundai_sticker(vin, text)
+                            
+                            # Convert to StickerData format for compatibility
+                            from sticker_scraper import StickerData
+                            sticker_data = StickerData(
+                                VIN=parsed_data.get('VIN'),
+                                Trim=parsed_data.get('Trim'),
+                                Drivetrain=parsed_data.get('Drivetrain'),
+                                Seats=parsed_data.get('Seats'),
+                                Engine=parsed_data.get('Engine'),
+                                ExteriorColor=parsed_data.get('ExteriorColor'),
+                                InteriorColor=parsed_data.get('InteriorColor'),
+                                BaseMSRP=parsed_data.get('BaseMSRP'),
+                                DestinationCharge=parsed_data.get('DestinationCharge'),
+                                TotalMSRP=parsed_data.get('TotalMSRP'),
+                                Options=parsed_data.get('Options'),
+                                StickerURL=f"Uploaded PDF: {uploaded_file.name}",
+                                ParseNotes=f"Enhanced parsing from uploaded PDF: {uploaded_file.name}"
+                            )
+                            
+                            # Check if VIN already exists in database
+                            existing_data = db.get_all_data()
+                            vin_exists = not existing_data[existing_data['vin'] == vin].empty
+                            
+                            # Store enhanced features
+                            success, message = db.add_enhanced_features(
+                                vin=sticker_data.VIN,
+                                seats=sticker_data.Seats,
+                                engine=sticker_data.Engine,
+                                horsepower=sticker_data.Horsepower,
+                                base_msrp=sticker_data.BaseMSRP,
+                                destination_charge=sticker_data.DestinationCharge,
+                                total_msrp=sticker_data.TotalMSRP,
+                                packages=sticker_data.Packages,
+                                options=sticker_data.Options,
+                                sticker_url=f"Uploaded PDF: {uploaded_file.name}",
+                                parse_notes=f"Parsed from uploaded PDF: {uploaded_file.name}"
+                            )
+                            
+                            if success:
+                                action = "Enhanced existing VIN" if vin_exists else "Added new VIN"
+                                results.append({
+                                    'file': uploaded_file.name,
+                                    'status': 'success',
+                                    'message': f"{action}: {message}",
+                                    'vin': vin,
+                                    'data': sticker_data
+                                })
+                            else:
+                                results.append({
+                                    'file': uploaded_file.name,
+                                    'status': 'error',
+                                    'message': f"Database error: {message}",
+                                    'vin': vin
+                                })
+                                
+                        except Exception as e:
+                            results.append({
+                                'file': uploaded_file.name,
+                                'status': 'error',
+                                'message': f"Processing error: {str(e)}",
+                                'vin': None
+                            })
+                    
+                    # Display results
+                    success_count = sum(1 for r in results if r['status'] == 'success')
+                    st.success(f"✅ Successfully processed {success_count}/{len(results)} PDF files")
+                    
+                    # Show detailed results
+                    for result in results:
+                        if result['status'] == 'success':
+                            with st.expander(f"✅ {result['file']} (VIN: {result['vin']})"):
+                                st.info(result['message'])
+                                if 'data' in result:
+                                    data = result['data']
+                                    col1, col2 = st.columns(2)
+                                    with col1:
+                                        if data.Trim: st.write(f"**Trim:** {data.Trim}")
+                                        if data.Seats: st.write(f"**Seats:** {data.Seats}")
+                                        if data.Engine: st.write(f"**Engine:** {data.Engine}")
+                                        if data.Horsepower: st.write(f"**Horsepower:** {data.Horsepower}")
+                                    with col2:
+                                        if data.BaseMSRP: st.write(f"**Base MSRP:** ${data.BaseMSRP:,.0f}")
+                                        if data.DestinationCharge: st.write(f"**Destination:** ${data.DestinationCharge:,.0f}")
+                                        if data.TotalMSRP: st.write(f"**Total MSRP:** ${data.TotalMSRP:,.0f}")
+                                    if data.Packages: st.write(f"**Packages:** {data.Packages}")
+                                    if data.Options: st.write(f"**Options:** {data.Options}")
+                        else:
+                            with st.expander(f"❌ {result['file']}"):
+                                st.error(result['message'])
+                    
+                    st.rerun()
+        
+        st.divider()
+        
         # Manual data entry form
         if single_vin:
             st.subheader("📝 Manual Window Sticker Data Entry")
