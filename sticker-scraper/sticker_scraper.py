@@ -55,7 +55,7 @@ except ImportError:
 
 COLLEGE_PARK_STICKER_URL = "https://www.collegeparkhyundai.com/dealer-inspire-inventory/window-stickers/hyundai/?vin={vin}"
 
-def create_chrome_driver(headless=True):
+def create_chrome_driver(headless=True, download_dir=None):
     """Create a Chrome WebDriver with realistic settings"""
     if not SELENIUM_AVAILABLE:
         raise ImportError("Selenium not available. Install with: pip install selenium")
@@ -63,6 +63,19 @@ def create_chrome_driver(headless=True):
     options = Options()
     if headless:
         options.add_argument("--headless")
+    
+    # Configure download directory and behavior
+    if download_dir:
+        import os
+        os.makedirs(download_dir, exist_ok=True)
+        prefs = {
+            "download.default_directory": download_dir,
+            "download.prompt_for_download": False,
+            "download.directory_upgrade": True,
+            "safebrowsing.enabled": True,
+            "plugins.always_open_pdf_externally": True  # Download PDFs instead of viewing
+        }
+        options.add_experimental_option("prefs", prefs)
     
     # Make browser look more realistic
     options.add_argument("--no-sandbox")
@@ -134,106 +147,109 @@ def fetch_sticker_pdf_browser(vin: str, timeout: int = 30) -> bytes:
     if not SELENIUM_AVAILABLE:
         raise ImportError("Browser mode requires selenium. Install with: pip install selenium")
     
+    import tempfile
+    import os
+    import glob
+    
     url = COLLEGE_PARK_STICKER_URL.format(vin=vin.strip())
     driver = None
     
     try:
-        driver = create_chrome_driver(headless=True)
+        # Create temporary download directory
+        download_dir = tempfile.mkdtemp()
+        driver = create_chrome_driver(headless=True, download_dir=download_dir)
         driver.set_page_load_timeout(timeout)
         
         # Navigate to the URL
         driver.get(url)
         
         # Wait a bit to let any JS load
-        time.sleep(2)
+        time.sleep(3)
         
-        # Multiple methods to detect and retrieve PDF content
-        page_source = driver.page_source.lower()
-        current_url = driver.current_url
-        
-        # Method 1: Direct PDF URL
-        if current_url.endswith('.pdf') or 'pdf' in current_url:
-            # Browser navigated directly to PDF, use requests with cookies
-            cookies = driver.get_cookies()
-            session = requests.Session()
-            for cookie in cookies:
-                session.cookies.set(cookie['name'], cookie['value'])
-            
-            headers = {
-                "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Accept": "application/pdf,*/*",
-                "Referer": url
-            }
-            
-            response = session.get(current_url, headers=headers, timeout=timeout)
-            response.raise_for_status()
-            
-            if response.content.startswith(b"%PDF"):
-                return response.content
-            else:
-                raise ValueError(f"Direct PDF URL didn't return valid PDF for VIN {vin}")
-        
-        # Method 2: Look for PDF links or embedded content
-        elif "pdf" in page_source or "application/pdf" in page_source:
-            # Try the original URL with authenticated session
-            cookies = driver.get_cookies()
-            session = requests.Session()
-            for cookie in cookies:
-                session.cookies.set(cookie['name'], cookie['value'])
-            
-            headers = {
-                "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Accept": "application/pdf,*/*",
-                "Referer": current_url
-            }
-            
-            response = session.get(url, headers=headers, timeout=timeout)
-            response.raise_for_status()
-            
-            if response.content.startswith(b"%PDF"):
-                return response.content
-        
-        # Method 3: Check if we can get PDF directly from original URL regardless of page content
+        # Look for and click the "Window Sticker" button
         try:
-            cookies = driver.get_cookies()
-            session = requests.Session()
-            for cookie in cookies:
-                session.cookies.set(cookie['name'], cookie['value'])
+            # Try multiple selectors for the Window Sticker button
+            button_selectors = [
+                "//button[contains(text(), 'Window Sticker')]",
+                "//a[contains(text(), 'Window Sticker')]", 
+                "//button[contains(@class, 'window-sticker')]",
+                "//a[contains(@class, 'window-sticker')]",
+                "//*[contains(text(), 'Window Sticker') and (self::button or self::a)]"
+            ]
             
-            headers = {
-                "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Accept": "application/pdf,*/*",
-                "Referer": current_url
-            }
+            button_found = False
+            for selector in button_selectors:
+                try:
+                    button = WebDriverWait(driver, 5).until(
+                        EC.element_to_be_clickable((By.XPATH, selector))
+                    )
+                    button.click()
+                    button_found = True
+                    print(f"Clicked Window Sticker button for VIN {vin}")
+                    break
+                except TimeoutException:
+                    continue
             
-            response = session.get(url, headers=headers, timeout=timeout)
-            response.raise_for_status()
-            
-            if response.content.startswith(b"%PDF"):
-                return response.content
-        except Exception:
-            pass  # Will check for error conditions below
-        
-        # Method 4: Check for common error conditions
-        if "403" in page_source or "forbidden" in page_source:
-            raise requests.exceptions.HTTPError(f"Access denied for VIN {vin} even with browser automation")
-        elif "not found" in page_source or "404" in page_source:
-            raise requests.exceptions.HTTPError(f"Window sticker not found for VIN {vin}")
-        elif "invalid" in page_source and "vin" in page_source:
-            raise requests.exceptions.HTTPError(f"Invalid VIN {vin} according to dealership")
-        else:
-            # Provide more detailed error info for debugging
-            error_details = f"Unexpected page content for VIN {vin}. "
-            error_details += f"Current URL: {current_url[:100]}... "
-            if len(page_source) > 100:
-                error_details += f"Page contains: {page_source[:200]}..."
+            if button_found:
+                # Wait for PDF to download
+                print(f"Waiting for PDF download for VIN {vin}...")
+                
+                # Monitor download directory for PDF file
+                download_timeout = 30
+                check_interval = 1
+                elapsed = 0
+                
+                while elapsed < download_timeout:
+                    time.sleep(check_interval)
+                    elapsed += check_interval
+                    
+                    # Look for PDF files in download directory
+                    pdf_files = glob.glob(os.path.join(download_dir, "*.pdf"))
+                    if pdf_files:
+                        # Found a PDF, read it
+                        pdf_path = pdf_files[0]  # Take the first PDF found
+                        with open(pdf_path, 'rb') as f:
+                            pdf_content = f.read()
+                        
+                        # Cleanup
+                        try:
+                            os.remove(pdf_path)
+                            os.rmdir(download_dir)
+                        except:
+                            pass
+                        
+                        print(f"Successfully downloaded PDF for VIN {vin}")
+                        return pdf_content
+                
+                # If we get here, download timed out
+                raise TimeoutException(f"PDF download timed out for VIN {vin}")
             else:
-                error_details += f"Page source: {page_source}"
-            raise ValueError(error_details)
+                # Button not found, check page for errors
+                page_source = driver.page_source.lower()
+                if "403" in page_source or "forbidden" in page_source:
+                    raise requests.exceptions.HTTPError(f"Access denied for VIN {vin}")
+                elif "not found" in page_source or "404" in page_source:
+                    raise requests.exceptions.HTTPError(f"Window sticker not found for VIN {vin}")
+                elif "invalid" in page_source and "vin" in page_source:
+                    raise requests.exceptions.HTTPError(f"Invalid VIN {vin} according to dealership")
+                else:
+                    raise ValueError(f"Could not find Window Sticker button for VIN {vin}")
+                
+        except Exception as e:
+            print(f"Error during browser automation for VIN {vin}: {e}")
+            raise
                 
     finally:
         if driver:
             driver.quit()
+        
+        # Cleanup download directory
+        try:
+            import shutil
+            if 'download_dir' in locals() and os.path.exists(download_dir):
+                shutil.rmtree(download_dir)
+        except:
+            pass
 
 # ------------------------------
 # Helpers
