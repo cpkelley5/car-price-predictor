@@ -116,6 +116,38 @@ def predict_palisade_price(features_df):
                 price += adjustment
                 break
         
+        # Add option pricing adjustments if available
+        if 'PremiumPaint' in row.index:
+            # Premium paint adjustment
+            if row.get('PremiumPaint', 0) == 1:
+                price += 400  # Average premium paint cost
+            
+            # Floor mats adjustment
+            if row.get('FloorMats', 0) == 1:
+                price += 200  # Average floor mats cost
+            
+            # Cargo accessories adjustments
+            if row.get('CargoNet', 0) == 1:
+                price += 40
+            if row.get('CargoTray', 0) == 1:
+                price += 140
+            if row.get('CargoCover', 0) == 1:
+                price += 220
+            if row.get('CargoBlocks', 0) == 1:
+                price += 80
+                
+            # Safety/Weather adjustments
+            if row.get('FirstAidKit', 0) == 1:
+                price += 70
+            if row.get('SevereWeatherKit', 0) == 1:
+                price += 180
+                
+            # Use total options cost if available (more accurate)
+            total_options = row.get('TotalOptionsCost', 0)
+            if total_options > 0:
+                price = price - (200 + 400 + 40 + 140 + 220 + 80 + 70 + 180)  # Remove individual estimates
+                price += total_options  # Add actual total
+        
         # Add deterministic variance for realism
         feature_hash = hash(tuple(row.values)) % 1000
         variance = (feature_hash - 500) * 3  # +/- 1500
@@ -968,18 +1000,131 @@ if DATABASE_AVAILABLE and st.session_state.get('show_admin', False):
                                 if total_match:
                                     data['TotalMSRP'] = float(total_match.group(1).replace(',', ''))
                                 
-                                # Extract added features/options
+                                # Extract and normalize individual options
+                                options = {}
                                 features_section = re.search(r'ADDED FEATURES:(.*?)(?:Inland Freight|$)', sticker_text, re.DOTALL)
                                 if features_section:
                                     features_text = features_section.group(1)
-                                    # Parse individual features
+                                    # Parse individual features with costs
                                     feature_lines = []
                                     for line in features_text.split('\n'):
                                         line = line.strip()
                                         if line.startswith('*') and '$' in line:
-                                            feature_lines.append(line.replace('*', '').strip())
+                                            feature_text = line.replace('*', '').strip()
+                                            feature_lines.append(feature_text)
+                                            
+                                            # Extract cost from feature line
+                                            cost_match = re.search(r'\$?([\d,]+(?:\.\d{2})?)', feature_text)
+                                            cost = float(cost_match.group(1).replace(',', '')) if cost_match else 0
+                                            
+                                            # Normalize option names and map to database fields
+                                            feature_lower = feature_text.lower()
+                                            if 'creamy white' in feature_lower or 'premium paint' in feature_lower:
+                                                options['premium_paint'] = True
+                                                options['premium_paint_cost'] = cost
+                                                options['paint_name'] = feature_text.split('$')[0].strip()
+                                            elif 'floor mat' in feature_lower or 'carpeted floor' in feature_lower:
+                                                options['floor_mats'] = True
+                                                options['floor_mats_cost'] = cost
+                                            elif 'cargo net' in feature_lower:
+                                                options['cargo_net'] = True
+                                                options['cargo_net_cost'] = cost
+                                            elif 'cargo tray' in feature_lower:
+                                                options['cargo_tray'] = True
+                                                options['cargo_tray_cost'] = cost
+                                            elif 'cargo cover' in feature_lower:
+                                                options['cargo_cover'] = True
+                                                options['cargo_cover_cost'] = cost
+                                            elif 'cargo block' in feature_lower:
+                                                options['cargo_blocks'] = True
+                                                options['cargo_blocks_cost'] = cost
+                                            elif 'first aid' in feature_lower:
+                                                options['first_aid_kit'] = True
+                                                options['first_aid_kit_cost'] = cost
+                                            elif 'severe weather' in feature_lower or 'weather kit' in feature_lower:
+                                                options['severe_weather_kit'] = True
+                                                options['severe_weather_kit_cost'] = cost
+                                    
                                     if feature_lines:
                                         data['Options'] = '; '.join(feature_lines)
+                                
+                                # Store normalized options in data for database storage
+                                data['NormalizedOptions'] = options
+                                
+                                # Extract and normalize standard features based on trim
+                                standard_features = {}
+                                
+                                # Extract wheel size
+                                if '21" Alloy Wheels' in sticker_text:
+                                    standard_features['wheel_size'] = '21'
+                                elif '20" Alloy Wheels' in sticker_text:
+                                    standard_features['wheel_size'] = '20' 
+                                elif '18" Alloy Wheels' in sticker_text:
+                                    standard_features['wheel_size'] = '18'
+                                
+                                # Extract sunroof type
+                                if 'Dual-Pane Sunroof' in sticker_text:
+                                    standard_features['sunroof_type'] = 'Dual-Pane'
+                                elif 'Power Sunroof' in sticker_text:
+                                    standard_features['sunroof_type'] = 'Power'
+                                
+                                # Extract seating material
+                                if 'Nappa Leather-Trimmed Seating' in sticker_text:
+                                    standard_features['seating_material'] = 'Nappa Leather'
+                                elif 'Leather-Trimmed Seating' in sticker_text:
+                                    standard_features['seating_material'] = 'Leather'
+                                elif 'H-Tex® Trimmed Seating' in sticker_text:
+                                    standard_features['seating_material'] = 'H-Tex'
+                                
+                                # Extract seat features
+                                if 'Heated & Ventilated, Power Front Seats' in sticker_text:
+                                    standard_features['front_seat_ventilation'] = True
+                                elif 'Heated, Power Front Seats' in sticker_text:
+                                    standard_features['front_seat_ventilation'] = False
+                                    
+                                if 'Integrated Memory' in sticker_text:
+                                    standard_features['seat_memory'] = True
+                                    
+                                if 'Ergo Motion' in sticker_text:
+                                    standard_features['ergo_motion'] = True
+                                    
+                                if 'Relaxation Seats' in sticker_text:
+                                    standard_features['relaxation_seats'] = True
+                                
+                                # Extract safety features
+                                if 'Blind-Spot Collision-Avoidance Assist' in sticker_text:
+                                    standard_features['blind_spot_type'] = 'Collision-Avoidance'
+                                elif 'Blind-Spot Collision Warning' in sticker_text:
+                                    standard_features['blind_spot_type'] = 'Warning'
+                                    
+                                if 'Parking Collision-Avoidance Assist' in sticker_text:
+                                    standard_features['parking_collision_avoidance'] = True
+                                    
+                                if 'Parking Distance Warning-Forward, Reverse & Side' in sticker_text:
+                                    standard_features['parking_side_warning'] = True
+                                elif 'Parking Distance Warning-Forward & Reverse' in sticker_text:
+                                    standard_features['parking_side_warning'] = False
+                                
+                                # Extract technology features
+                                if 'Bose® Premium Audio System' in sticker_text:
+                                    standard_features['audio_system'] = 'Bose Premium'
+                                else:
+                                    standard_features['audio_system'] = 'Standard'
+                                    
+                                if 'Head-Up Display' in sticker_text:
+                                    standard_features['head_up_display'] = True
+                                    
+                                if 'Integrated Front & Rear Dashcam' in sticker_text:
+                                    standard_features['front_rear_dashcam'] = True
+                                    
+                                if 'Remote Smart Park Assist' in sticker_text:
+                                    standard_features['remote_smart_park'] = True
+                                    
+                                if 'HomeLink®' in sticker_text:
+                                    standard_features['homelink_mirror'] = True
+                                
+                                # Store standard features for database storage
+                                data['StandardFeatures'] = standard_features
                                 
                                 # Extract additional data points
                                 # Model/Year
@@ -1071,6 +1216,20 @@ if DATABASE_AVAILABLE and st.session_state.get('show_admin', False):
                                 sticker_url=f"Uploaded PDF: {uploaded_file.name}",
                                 parse_notes=f"Parsed from uploaded PDF: {uploaded_file.name}"
                             )
+                            
+                            # Also store normalized options if parsed
+                            if hasattr(sticker_data, 'NormalizedOptions') and sticker_data.NormalizedOptions:
+                                options_success, options_message = db.add_vehicle_options(
+                                    vin=sticker_data.VIN,
+                                    **sticker_data.NormalizedOptions
+                                )
+                            
+                            # Store standard features if parsed
+                            if hasattr(sticker_data, 'StandardFeatures') and sticker_data.StandardFeatures:
+                                features_success, features_message = db.add_standard_features(
+                                    vin=sticker_data.VIN,
+                                    **sticker_data.StandardFeatures
+                                )
                             
                             if success:
                                 action = "Enhanced existing VIN" if vin_exists else "Added new VIN"

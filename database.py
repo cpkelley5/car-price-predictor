@@ -59,6 +59,82 @@ class PalisadeDatabase:
             )
         ''')
         
+        # Create normalized vehicle options table for individual option tracking
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS vehicle_options (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                vin TEXT NOT NULL,
+                
+                -- Paint Options
+                premium_paint BOOLEAN DEFAULT FALSE,
+                premium_paint_cost REAL DEFAULT 0,
+                paint_name TEXT,
+                
+                -- Floor Protection
+                floor_mats BOOLEAN DEFAULT FALSE,
+                floor_mats_cost REAL DEFAULT 0,
+                
+                -- Cargo Options
+                cargo_net BOOLEAN DEFAULT FALSE,
+                cargo_net_cost REAL DEFAULT 0,
+                cargo_tray BOOLEAN DEFAULT FALSE,
+                cargo_tray_cost REAL DEFAULT 0,
+                cargo_cover BOOLEAN DEFAULT FALSE,
+                cargo_cover_cost REAL DEFAULT 0,
+                cargo_blocks BOOLEAN DEFAULT FALSE,
+                cargo_blocks_cost REAL DEFAULT 0,
+                
+                -- Safety & Emergency
+                first_aid_kit BOOLEAN DEFAULT FALSE,
+                first_aid_kit_cost REAL DEFAULT 0,
+                
+                -- Weather Protection
+                severe_weather_kit BOOLEAN DEFAULT FALSE,
+                severe_weather_kit_cost REAL DEFAULT 0,
+                
+                -- Totals
+                total_options_cost REAL DEFAULT 0,
+                options_count INTEGER DEFAULT 0,
+                
+                created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (vin) REFERENCES vehicle_data (vin)
+            )
+        ''')
+        
+        # Create standard features table for trim-level feature tracking
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS standard_features (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                vin TEXT NOT NULL,
+                
+                -- Wheel & Exterior
+                wheel_size TEXT,  -- "18", "20", "21"
+                sunroof_type TEXT,  -- "Power", "Dual-Pane"
+                
+                -- Seating & Interior 
+                seating_material TEXT,  -- "H-Tex", "Leather", "Nappa Leather"
+                front_seat_ventilation BOOLEAN DEFAULT FALSE,
+                seat_memory BOOLEAN DEFAULT FALSE,
+                ergo_motion BOOLEAN DEFAULT FALSE,
+                relaxation_seats BOOLEAN DEFAULT FALSE,
+                
+                -- Safety Features
+                blind_spot_type TEXT,  -- "Warning", "Collision-Avoidance"
+                parking_collision_avoidance BOOLEAN DEFAULT FALSE,
+                parking_side_warning BOOLEAN DEFAULT FALSE,
+                
+                -- Technology
+                audio_system TEXT,  -- "Standard", "Bose Premium"
+                head_up_display BOOLEAN DEFAULT FALSE,
+                front_rear_dashcam BOOLEAN DEFAULT FALSE,
+                remote_smart_park BOOLEAN DEFAULT FALSE,
+                homelink_mirror BOOLEAN DEFAULT FALSE,
+                
+                created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (vin) REFERENCES vehicle_data (vin)
+            )
+        ''')
+        
         # Check if zip_code column exists, add if missing (migration)
         cursor.execute("PRAGMA table_info(vehicle_data)")
         columns = [column[1] for column in cursor.fetchall()]
@@ -236,6 +312,140 @@ class PalisadeDatabase:
         conn.close()
         return df
     
+    def add_vehicle_options(self, vin, **options):
+        """Add normalized vehicle options to database"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # Calculate totals
+            total_cost = sum(v for k, v in options.items() if k.endswith('_cost') and v)
+            options_count = sum(1 for k, v in options.items() if k.endswith('_cost') and v > 0)
+            
+            # Prepare column names and values
+            columns = list(options.keys()) + ['total_options_cost', 'options_count']
+            values = list(options.values()) + [total_cost, options_count]
+            placeholders = ', '.join(['?'] * len(columns))
+            column_names = ', '.join(columns)
+            
+            cursor.execute(f'''
+                INSERT OR REPLACE INTO vehicle_options 
+                (vin, {column_names})
+                VALUES (?, {placeholders})
+            ''', [vin] + values)
+            
+            conn.commit()
+            conn.close()
+            return True, "Vehicle options added successfully"
+        except Exception as e:
+            return False, f"Database error: {str(e)}"
+    
+    def get_vehicle_options(self, vin=None):
+        """Get normalized vehicle options data"""
+        conn = sqlite3.connect(self.db_path)
+        if vin:
+            df = pd.read_sql_query('''
+                SELECT * FROM vehicle_options WHERE vin = ?
+            ''', conn, params=(vin,))
+        else:
+            df = pd.read_sql_query('''
+                SELECT * FROM vehicle_options ORDER BY created_date DESC
+            ''', conn)
+        conn.close()
+        return df
+    
+    def add_standard_features(self, vin, **features):
+        """Add standard features based on trim level"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # Prepare column names and values
+            columns = list(features.keys())
+            values = list(features.values())
+            placeholders = ', '.join(['?'] * len(columns))
+            column_names = ', '.join(columns)
+            
+            cursor.execute(f'''
+                INSERT OR REPLACE INTO standard_features 
+                (vin, {column_names})
+                VALUES (?, {placeholders})
+            ''', [vin] + values)
+            
+            conn.commit()
+            conn.close()
+            return True, "Standard features added successfully"
+        except Exception as e:
+            return False, f"Database error: {str(e)}"
+    
+    def get_standard_features(self, vin=None):
+        """Get standard features data"""
+        conn = sqlite3.connect(self.db_path)
+        if vin:
+            df = pd.read_sql_query('''
+                SELECT * FROM standard_features WHERE vin = ?
+            ''', conn, params=(vin,))
+        else:
+            df = pd.read_sql_query('''
+                SELECT * FROM standard_features ORDER BY created_date DESC
+            ''', conn)
+        conn.close()
+        return df
+
+    def get_training_data_with_options(self, verified_only=False):
+        """Get training data enhanced with normalized option and standard feature data"""
+        conn = sqlite3.connect(self.db_path)
+        where_clause = "WHERE vd.verified = TRUE" if verified_only else ""
+        
+        df = pd.read_sql_query(f'''
+            SELECT 
+                vd.price as Price, 
+                vd.trim as Trim, 
+                vd.drivetrain as Drivetrain,
+                vd.city_mpg as City_mpg, 
+                vd.ext_color as ExtColor, 
+                vd.int_color as IntColor,
+                vd.zip_code as ZipCode,
+                
+                -- Options
+                COALESCE(vo.premium_paint, 0) as PremiumPaint,
+                COALESCE(vo.floor_mats, 0) as FloorMats,
+                COALESCE(vo.cargo_net, 0) as CargoNet,
+                COALESCE(vo.cargo_tray, 0) as CargoTray,
+                COALESCE(vo.cargo_cover, 0) as CargoCover,
+                COALESCE(vo.cargo_blocks, 0) as CargoBlocks,
+                COALESCE(vo.first_aid_kit, 0) as FirstAidKit,
+                COALESCE(vo.severe_weather_kit, 0) as SevereWeatherKit,
+                COALESCE(vo.total_options_cost, 0) as TotalOptionsCost,
+                COALESCE(vo.options_count, 0) as OptionsCount,
+                
+                -- Standard Features
+                sf.wheel_size as WheelSize,
+                sf.sunroof_type as SunroofType,
+                sf.seating_material as SeatingMaterial,
+                COALESCE(sf.front_seat_ventilation, 0) as FrontSeatVentilation,
+                COALESCE(sf.seat_memory, 0) as SeatMemory,
+                COALESCE(sf.ergo_motion, 0) as ErgoMotion,
+                COALESCE(sf.relaxation_seats, 0) as RelaxationSeats,
+                sf.blind_spot_type as BlindSpotType,
+                COALESCE(sf.parking_collision_avoidance, 0) as ParkingCollisionAvoidance,
+                COALESCE(sf.parking_side_warning, 0) as ParkingSideWarning,
+                sf.audio_system as AudioSystem,
+                COALESCE(sf.head_up_display, 0) as HeadUpDisplay,
+                COALESCE(sf.front_rear_dashcam, 0) as FrontRearDashcam,
+                COALESCE(sf.remote_smart_park, 0) as RemoteSmartPark,
+                COALESCE(sf.homelink_mirror, 0) as HomelinkMirror
+                
+            FROM vehicle_data vd
+            LEFT JOIN vehicle_options vo ON vd.vin = vo.vin
+            LEFT JOIN standard_features sf ON vd.vin = sf.vin
+            {where_clause}
+            ORDER BY vd.submission_date DESC
+        ''', conn)
+        
+        conn.close()
+        return df
+
     def get_vins_without_enhanced_data(self):
         """Get VINs that don't have enhanced feature data yet"""
         conn = sqlite3.connect(self.db_path)

@@ -14,9 +14,13 @@ class PalisadeModelTrainer:
     def __init__(self, db_path="palisade_data.db"):
         self.db = PalisadeDatabase(db_path)
         
-    def prepare_training_data(self, min_records=10):
-        """Prepare data for model training"""
-        df = self.db.get_training_data()
+    def prepare_training_data(self, min_records=10, include_options=True):
+        """Prepare data for model training with optional normalized options"""
+        if include_options:
+            # Try to get data with normalized options first
+            df = self.db.get_training_data_with_options()
+        else:
+            df = self.db.get_training_data()
         
         if len(df) < min_records:
             return None, f"Insufficient data for training. Need at least {min_records} records, have {len(df)}"
@@ -25,7 +29,7 @@ class PalisadeModelTrainer:
         # Note: ZipCode is collected but not used in prediction until we have enough data
         encoded_df = pd.get_dummies(df, columns=['Trim', 'Drivetrain', 'ExtColor', 'IntColor'], prefix=['Trim', 'Drivetrain', 'ExtColor', 'IntColor'])
         
-        # Ensure all expected columns exist (fill missing with 0)
+        # Base expected columns
         expected_columns = [
             'Trim_Calligraphy','Trim_Limited','Trim_SEL','Trim_SEL Convenience',
             'Drivetrain_AWD','Drivetrain_FWD','City_mpg',
@@ -33,6 +37,33 @@ class PalisadeModelTrainer:
             'IntColor_Black','IntColor_Brown','IntColor_Gray','IntColor_Gray/Navy','IntColor_Navy/Brown'
         ]
         
+        # Add normalized option columns if available and include_options=True
+        if include_options and 'PremiumPaint' in encoded_df.columns:
+            option_columns = [
+                'PremiumPaint', 'FloorMats', 'CargoNet', 'CargoTray', 'CargoCover',
+                'CargoBlocks', 'FirstAidKit', 'SevereWeatherKit', 'TotalOptionsCost', 'OptionsCount'
+            ]
+            expected_columns.extend(option_columns)
+            
+            # Add standard feature columns if available
+            if 'WheelSize' in encoded_df.columns:
+                # One-hot encode categorical standard features
+                categorical_features = ['WheelSize', 'SunroofType', 'SeatingMaterial', 'BlindSpotType', 'AudioSystem']
+                for feature in categorical_features:
+                    if feature in encoded_df.columns:
+                        encoded_df = pd.get_dummies(encoded_df, columns=[feature], prefix=[feature])
+                
+                # Add boolean standard feature columns
+                standard_feature_columns = [
+                    col for col in encoded_df.columns 
+                    if col.startswith(('WheelSize_', 'SunroofType_', 'SeatingMaterial_', 'BlindSpotType_', 'AudioSystem_')) or
+                    col in ['FrontSeatVentilation', 'SeatMemory', 'ErgoMotion', 'RelaxationSeats', 
+                           'ParkingCollisionAvoidance', 'ParkingSideWarning', 'HeadUpDisplay', 
+                           'FrontRearDashcam', 'RemoteSmartPark', 'HomelinkMirror']
+                ]
+                expected_columns.extend(standard_feature_columns)
+        
+        # Ensure all expected columns exist (fill missing with 0)
         for col in expected_columns:
             if col not in encoded_df.columns:
                 encoded_df[col] = 0
