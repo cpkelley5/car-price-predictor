@@ -749,22 +749,29 @@ if DATABASE_AVAILABLE and st.session_state.get('show_admin', False):
         with col2:
             browser_available = "browser automation" in message if available else False
             if st.button("🌐 Auto-Enhance (Browser)", disabled=not browser_available) and single_vin and available:
-                with st.spinner(f"Enhancing VIN {single_vin} with browser automation..."):
-                    success, message, sticker_data = enhancer.enhance_single_vin(single_vin, use_browser=True)
-                    if success:
-                        st.success(message)
-                        if sticker_data:
-                            st.json({
-                                "Trim": sticker_data.Trim,
-                                "Seats": sticker_data.Seats,
-                                "Engine": sticker_data.Engine,
-                                "Base MSRP": sticker_data.BaseMSRP,
-                                "Total MSRP": sticker_data.TotalMSRP,
-                                "Packages": sticker_data.Packages,
-                                "Parse Notes": sticker_data.ParseNotes
-                            })
-                    else:
-                        st.error(message)
+                # Test browser availability first
+                browser_works, browser_message = enhancer.test_browser_availability()
+                
+                if not browser_works:
+                    st.error(f"❌ Browser automation unavailable: {browser_message}")
+                    st.info("💡 **Cloud Limitation**: ChromeDriver may not be available on Streamlit Cloud. Try the 'Requests' method or manual entry.")
+                else:
+                    with st.spinner(f"Enhancing VIN {single_vin} with browser automation..."):
+                        success, message, sticker_data = enhancer.enhance_single_vin(single_vin, use_browser=True)
+                        if success:
+                            st.success(message)
+                            if sticker_data:
+                                st.json({
+                                    "Trim": sticker_data.Trim,
+                                    "Seats": sticker_data.Seats,
+                                    "Engine": sticker_data.Engine,
+                                    "Base MSRP": sticker_data.BaseMSRP,
+                                    "Total MSRP": sticker_data.TotalMSRP,
+                                    "Packages": sticker_data.Packages,
+                                    "Parse Notes": sticker_data.ParseNotes
+                                })
+                        else:
+                            st.error(message)
         
         with col3:
             if st.button("🌐 Get Sticker URL") and single_vin:

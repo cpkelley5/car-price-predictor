@@ -67,18 +67,67 @@ def create_chrome_driver(headless=True):
     # Make browser look more realistic
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--disable-crash-reporter")
+    options.add_argument("--disable-extensions")
+    options.add_argument("--disable-in-process-stack-traces")
+    options.add_argument("--disable-logging")
+    options.add_argument("--disable-dev-tools")
+    options.add_argument("--log-level=3")
+    options.add_argument("--output=/dev/null")
     options.add_argument("--disable-blink-features=AutomationControlled")
     options.add_experimental_option("excludeSwitches", ["enable-automation"])
     options.add_experimental_option('useAutomationExtension', False)
-    options.add_argument("--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+    options.add_argument("--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
     
+    # Try different approaches for driver creation
+    driver_errors = []
+    
+    # Method 1: Try with ChromeDriverManager (if available)
     try:
-        driver = webdriver.Chrome(options=options)
+        from selenium.webdriver.chrome.service import Service
+        from webdriver_manager.chrome import ChromeDriverManager
+        
+        service = Service(ChromeDriverManager().install())
+        driver = webdriver.Chrome(service=service, options=options)
         # Execute script to remove webdriver property
         driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
         return driver
-    except WebDriverException as e:
-        raise WebDriverException(f"Failed to create Chrome driver. Make sure ChromeDriver is installed: {e}")
+    except Exception as e:
+        driver_errors.append(f"ChromeDriverManager failed: {e}")
+    
+    # Method 2: Try with default Chrome path
+    try:
+        driver = webdriver.Chrome(options=options)
+        # Execute script to remove webdriver property  
+        driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+        return driver
+    except Exception as e:
+        driver_errors.append(f"Default Chrome failed: {e}")
+    
+    # Method 3: Try with explicit Chrome binary paths for cloud environments
+    chrome_paths = [
+        "/usr/bin/google-chrome",
+        "/usr/bin/google-chrome-stable", 
+        "/usr/bin/chromium-browser",
+        "/usr/bin/chromium"
+    ]
+    
+    for chrome_path in chrome_paths:
+        try:
+            import os
+            if os.path.exists(chrome_path):
+                options.binary_location = chrome_path
+                driver = webdriver.Chrome(options=options)
+                driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+                return driver
+        except Exception as e:
+            driver_errors.append(f"Chrome path {chrome_path} failed: {e}")
+    
+    # If all methods fail, raise comprehensive error
+    error_msg = "Failed to create Chrome driver. Tried multiple methods:\n" + "\n".join(driver_errors)
+    error_msg += "\n\nThis usually means ChromeDriver is not available in this environment."
+    raise WebDriverException(error_msg)
 
 def fetch_sticker_pdf_browser(vin: str, timeout: int = 30) -> bytes:
     """Fetch sticker PDF using real browser to bypass bot detection"""

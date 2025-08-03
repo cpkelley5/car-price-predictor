@@ -49,6 +49,19 @@ class StickerDataEnhancer:
         except ImportError as e:
             return False, f"Missing dependencies: {e}"
     
+    def test_browser_availability(self):
+        """Test if browser automation actually works"""
+        if not SELENIUM_AVAILABLE:
+            return False, "Selenium not available"
+        
+        try:
+            from sticker_scraper import create_chrome_driver
+            test_driver = create_chrome_driver(headless=True)
+            test_driver.quit()
+            return True, "Browser automation working"
+        except Exception as e:
+            return False, f"ChromeDriver unavailable: {str(e)[:100]}..."
+    
     def enhance_single_vin(self, vin: str, use_browser: bool = False) -> tuple[bool, str, Optional[StickerData]]:
         """Enhance a single VIN with window sticker data"""
         if not SCRAPER_AVAILABLE:
