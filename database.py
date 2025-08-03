@@ -39,6 +39,12 @@ class PalisadeDatabase:
             )
         ''')
         
+        # Check if zip_code column exists, add if missing (migration)
+        cursor.execute("PRAGMA table_info(vehicle_data)")
+        columns = [column[1] for column in cursor.fetchall()]
+        if 'zip_code' not in columns:
+            cursor.execute('ALTER TABLE vehicle_data ADD COLUMN zip_code TEXT')
+        
         # Create model training history
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS model_history (
@@ -117,12 +123,29 @@ class PalisadeDatabase:
     def get_all_data(self):
         """Get all vehicle data as DataFrame"""
         conn = sqlite3.connect(self.db_path)
-        df = pd.read_sql_query('''
-            SELECT vin, price, trim, drivetrain, city_mpg, ext_color, int_color, 
-                   zip_code, submission_date, verified, source
-            FROM vehicle_data 
-            ORDER BY submission_date DESC
-        ''', conn)
+        
+        # Check if zip_code column exists
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(vehicle_data)")
+        columns = [column[1] for column in cursor.fetchall()]
+        
+        if 'zip_code' in columns:
+            df = pd.read_sql_query('''
+                SELECT vin, price, trim, drivetrain, city_mpg, ext_color, int_color, 
+                       zip_code, submission_date, verified, source
+                FROM vehicle_data 
+                ORDER BY submission_date DESC
+            ''', conn)
+        else:
+            # Fallback for older database schema
+            df = pd.read_sql_query('''
+                SELECT vin, price, trim, drivetrain, city_mpg, ext_color, int_color, 
+                       submission_date, verified, source
+                FROM vehicle_data 
+                ORDER BY submission_date DESC
+            ''', conn)
+            df['zip_code'] = None  # Add empty column for consistency
+        
         conn.close()
         return df
     
@@ -130,14 +153,32 @@ class PalisadeDatabase:
         """Get data suitable for model training"""
         conn = sqlite3.connect(self.db_path)
         where_clause = "WHERE verified = TRUE" if verified_only else ""
-        df = pd.read_sql_query(f'''
-            SELECT price as Price, trim as Trim, drivetrain as Drivetrain, 
-                   city_mpg as City_mpg, ext_color as ExtColor, int_color as IntColor,
-                   zip_code as ZipCode
-            FROM vehicle_data 
-            {where_clause}
-            ORDER BY submission_date DESC
-        ''', conn)
+        
+        # Check if zip_code column exists
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(vehicle_data)")
+        columns = [column[1] for column in cursor.fetchall()]
+        
+        if 'zip_code' in columns:
+            df = pd.read_sql_query(f'''
+                SELECT price as Price, trim as Trim, drivetrain as Drivetrain, 
+                       city_mpg as City_mpg, ext_color as ExtColor, int_color as IntColor,
+                       zip_code as ZipCode
+                FROM vehicle_data 
+                {where_clause}
+                ORDER BY submission_date DESC
+            ''', conn)
+        else:
+            # Fallback for older database schema
+            df = pd.read_sql_query(f'''
+                SELECT price as Price, trim as Trim, drivetrain as Drivetrain, 
+                       city_mpg as City_mpg, ext_color as ExtColor, int_color as IntColor
+                FROM vehicle_data 
+                {where_clause}
+                ORDER BY submission_date DESC
+            ''', conn)
+            df['ZipCode'] = None  # Add empty column for consistency
+        
         conn.close()
         return df
     
