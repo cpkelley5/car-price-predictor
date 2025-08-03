@@ -37,12 +37,9 @@ st.set_page_config(
 # Title and description
 st.title("🚗 Car Price Predictor")
 st.markdown("""
-**Current Model: 2026 Hyundai Palisade** 
+**Get instant, accurate price predictions for 2026 Hyundai Palisade vehicles**
 
-This app predicts whether a vehicle listing is priced fairly based on its characteristics.
-Enter the vehicle details below to get a price prediction and evaluation.
-
-*More car models coming soon!*
+Our AI model analyzes trim levels, features, and options to predict fair market pricing with 2.5% average error.
 """)
 
 # Enhanced prediction function based on actual training data
@@ -245,37 +242,7 @@ def predict_with_enhanced_model(features_df, enhanced_config):
     return np.array(predictions)
 
 # Sidebar for inputs
-st.sidebar.header("Vehicle Characteristics")
-
-# Show database stats if available
-if DATABASE_AVAILABLE and db:
-    with st.sidebar.expander("📊 Model Statistics"):
-        stats = db.get_data_stats()
-        st.metric("Total Vehicles", stats['total_records'])
-        st.metric("Verified Records", stats['verified_records'])
-        st.metric("Recent Submissions", stats['recent_submissions'])
-        if stats['total_records'] > 0:
-            try:
-                avg_price = float(stats['avg_price']) if stats['avg_price'] else 0
-                min_price = float(stats['min_price']) if stats['min_price'] else 0
-                max_price = float(stats['max_price']) if stats['max_price'] else 0
-                
-                st.metric("Avg Price", f"${avg_price:,.0f}")
-                st.caption(f"Range: ${min_price:,.0f} - ${max_price:,.0f}")
-            except (ValueError, TypeError) as e:
-                st.metric("Avg Price", "Data Error")
-                st.caption("Price data needs to be refreshed")
-    
-    # Model improvement analytics
-    with st.sidebar.expander("📈 Model Analytics"):
-        analytics = ModelAnalytics()
-        diversity = analytics.calculate_diversity_score()
-        
-        st.metric("Data Diversity Score", f"{diversity['overall_diversity_score']:.1%}")
-        st.progress(diversity['overall_diversity_score'])
-        
-        if st.button("📊 View Full Analytics"):
-            st.session_state.show_analytics = True
+st.sidebar.header("Vehicle Specifications")
 
 # Model features based on your trained model
 col1, col2 = st.columns(2)
@@ -314,34 +281,6 @@ with col2:
 st.subheader("Price Evaluation")
 asking_price = st.number_input("Asking Price ($)", min_value=20000, max_value=80000, value=45000, step=500)
 
-# Optional VIN input for model improvement
-st.subheader("🔄 Help Improve Our Model (Optional)")
-with st.expander("📝 Submit Vehicle Data"):
-    st.markdown("""
-    **Help us improve our predictions!** If you provide a VIN, we can add this vehicle to our training data 
-    (only if the VIN is not already in our database). This helps make our model more accurate for everyone.
-    """)
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        vin_input = st.text_input(
-            "Vehicle VIN (17 characters)", 
-            placeholder="KM8RMES2XTU030770",
-            help="Optional: Provide VIN to contribute to model improvement"
-        )
-    
-    with col2:
-        zip_code = st.text_input(
-            "Vehicle ZIP Code (5 digits)",
-            placeholder="90210",
-            help="Required if providing VIN - helps us understand regional pricing"
-        )
-    
-    contribute_data = st.checkbox(
-        "I confirm this price and vehicle data is accurate", 
-        help="Check this box to contribute your data to improve the model"
-    )
 
 # Create feature vector exactly as your model expects
 def prepare_input(trim, drivetrain, city_mpg, ext, interior):
@@ -435,64 +374,6 @@ if st.button("Predict Price", type="primary"):
             
             st.plotly_chart(fig, use_container_width=True)
             
-            # THEN handle VIN submission as secondary information
-            if DATABASE_AVAILABLE and vin_input and contribute_data:
-                # Validate ZIP code if VIN is provided
-                zip_cleaned = zip_code.strip() if zip_code else ""
-                if not zip_cleaned:
-                    st.error("❌ ZIP code is required when submitting a VIN")
-                elif not (zip_cleaned.isdigit() and len(zip_cleaned) == 5):
-                    st.error("❌ ZIP code must be exactly 5 digits")
-                else:
-                    # Check for duplicate VIN first
-                    vin_cleaned = vin_input.strip().upper()
-                    is_valid_vin, vin_message = db.validate_vin(vin_cleaned)
-                    
-                    if is_valid_vin and db.vin_exists(vin_cleaned):
-                        # Vehicle already exists - show informational message
-                        st.info("ℹ️ **Vehicle Recognition**: This VIN is already in our database, which helped ensure an accurate prediction! No need to re-submit this vehicle data.")
-                    elif is_valid_vin:
-                        # New vehicle - attempt to add
-                        success, message = db.add_vehicle_data(
-                            vin=vin_cleaned,
-                            price=asking_price,
-                            trim=trim_level,
-                            drivetrain=drivetrain,
-                            city_mpg=city_mpg,
-                            ext_color=ext_color,
-                            int_color=int_color,
-                            zip_code=zip_cleaned,
-                            verified=False  # Requires manual verification
-                        )
-                        
-                        if success:
-                            st.success(f"✅ {message} Thank you for contributing to our model!")
-                            
-                            # Check if model should be retrained
-                            trainer = PalisadeModelTrainer()
-                            should_retrain, retrain_message = trainer.should_retrain(new_submissions_threshold=2)
-                            
-                            if should_retrain:
-                                with st.spinner("🔄 Improving model with new data..."):
-                                    retrain_success, retrain_result = trainer.retrain_model()
-                                    if retrain_success:
-                                        st.info(f"🎯 Model improved! {retrain_result}")
-                                        # Clear cache to reload new model
-                                        st.cache_resource.clear()
-                                    else:
-                                        st.warning(f"⚠️ Model update deferred: {retrain_result}")
-                        else:
-                            st.error(f"❌ {message}")
-                    else:
-                        # Invalid VIN
-                        st.error(f"❌ Invalid VIN: {vin_message}")
-            elif vin_input and not contribute_data:
-                st.warning("⚠️ Please confirm data accuracy to contribute to model improvement")
-            elif vin_input and not zip_code:
-                st.warning("⚠️ ZIP code is required when submitting a VIN")
-            elif not DATABASE_AVAILABLE and vin_input:
-                st.info("ℹ️ VIN submission not available in this deployment")
-                
             
         except Exception as e:
             st.error(f"Error making prediction: {e}")
@@ -542,19 +423,6 @@ if st.button("Predict Price", type="primary"):
                 delta=f"{price_diff_pct:.1f}%"
             )
 
-# Additional information
-with st.expander("ℹ️ How to use this app"):
-    st.markdown("""
-    1. **Enter vehicle details** in the form above
-    2. **Set the asking price** you want to evaluate
-    3. **Click "Predict Price"** to get the analysis
-    4. **Review the results** to see if the price is fair
-    
-    **Price Evaluation Guide:**
-    - ✅ **Fair Price**: Within 5% of predicted value
-    - ⚠️ **Overpriced**: More than 5% above predicted value  
-    - 💰 **Good Deal**: More than 5% below predicted value
-    """)
 
 # Analytics Dashboard
 if DATABASE_AVAILABLE and st.session_state.get('show_analytics', False):
@@ -628,37 +496,6 @@ if DATABASE_AVAILABLE and st.session_state.get('show_analytics', False):
         st.session_state.show_analytics = False
         st.rerun()
 
-with st.expander("🔧 Model Information"):
-    if model is not None:
-        st.success("✅ Price prediction model loaded successfully")
-        # Show the exact features used
-        st.write("**Model Features:**")
-        features_list = [
-            'Trim_Calligraphy','Trim_Limited','Trim_SEL','Trim_SEL Convenience',
-            'Drivetrain_AWD','Drivetrain_FWD','City_mpg',
-            'ExtColor_Abyss Black','ExtColor_Classy Blue','ExtColor_Creamy White','ExtColor_Ecotronic Gray',
-            'IntColor_Black','IntColor_Brown','IntColor_Gray','IntColor_Gray/Navy','IntColor_Navy/Brown'
-        ]
-        for i, feature in enumerate(features_list, 1):
-            st.write(f"{i}. {feature}")
-        st.write(f"**Total Features:** {len(features_list)}")
-        
-        # Show current model performance if analytics available
-        if DATABASE_AVAILABLE:
-            analytics = ModelAnalytics()
-            accuracy_analysis = analytics.analyze_prediction_accuracy()
-            if accuracy_analysis:
-                st.write(f"**Current Model Accuracy:** {accuracy_analysis['accuracy']['avg_percent_error']:.1f}% average error")
-                st.write(f"**Training Data Size:** {accuracy_analysis['train_size']} records")
-    else:
-        st.warning("⚠️ Model not loaded - running in demo mode")
-        st.markdown("""
-        **To use your trained model:**
-        1. Ensure the model file `palisade_price_model.pkl` is in the same directory
-        2. Install joblib: `pip install joblib`
-        3. Restart the app
-        4. The model should load automatically
-        """)
 
 # Admin Interface
 st.sidebar.markdown("---")
@@ -805,65 +642,6 @@ if DATABASE_AVAILABLE and st.session_state.get('show_admin', False):
         else:
             st.info("🎉 All VINs have been enhanced!")
         
-        # Single VIN enhancement
-        st.subheader("Enhance Single VIN")
-        single_vin = st.text_input("VIN to enhance", placeholder="KM8RM5S22TU019312")
-        
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            if st.button("🤖 Auto-Enhance (Requests)") and single_vin and available:
-                with st.spinner(f"Enhancing VIN {single_vin} with requests..."):
-                    success, message, sticker_data = enhancer.enhance_single_vin(single_vin, use_browser=False)
-                    if success:
-                        st.success(message)
-                        if sticker_data:
-                            st.json({
-                                "Trim": sticker_data.Trim,
-                                "Seats": sticker_data.Seats,
-                                "Engine": sticker_data.Engine,
-                                "Base MSRP": sticker_data.BaseMSRP,
-                                "Total MSRP": sticker_data.TotalMSRP,
-                                "Packages": sticker_data.Packages,
-                                "Parse Notes": sticker_data.ParseNotes
-                            })
-                    else:
-                        st.error(message)
-                        if "403" in message or "Forbidden" in message:
-                            st.info("💡 **Try Browser Mode**: Click 'Browser Mode' button to bypass bot detection.")
-        
-        with col2:
-            browser_available = "browser automation" in message if available else False
-            if st.button("🌐 Auto-Enhance (Browser)", disabled=not browser_available) and single_vin and available:
-                # Test browser availability first
-                browser_works, browser_message = enhancer.test_browser_availability()
-                
-                if not browser_works:
-                    st.error(f"❌ Browser automation unavailable: {browser_message}")
-                    st.info("💡 **Cloud Limitation**: ChromeDriver may not be available on Streamlit Cloud. Try the 'Requests' method or manual entry.")
-                else:
-                    with st.spinner(f"Enhancing VIN {single_vin} with browser automation..."):
-                        success, message, sticker_data = enhancer.enhance_single_vin(single_vin, use_browser=True)
-                        if success:
-                            st.success(message)
-                            if sticker_data:
-                                st.json({
-                                    "Trim": sticker_data.Trim,
-                                    "Seats": sticker_data.Seats,
-                                    "Engine": sticker_data.Engine,
-                                    "Base MSRP": sticker_data.BaseMSRP,
-                                    "Total MSRP": sticker_data.TotalMSRP,
-                                    "Packages": sticker_data.Packages,
-                                    "Parse Notes": sticker_data.ParseNotes
-                                })
-                        else:
-                            st.error(message)
-        
-        with col3:
-            if st.button("🌐 Get Sticker URL") and single_vin:
-                sticker_url = f"https://www.collegeparkhyundai.com/dealer-inspire-inventory/window-stickers/hyundai/?vin={single_vin.strip()}"
-                st.success("✅ Sticker URL generated!")
-                st.markdown(f"**[📄 Download Window Sticker PDF]({sticker_url})**")
-                st.info("💡 **Manual Process**: Click the link above to download the PDF in your browser, then use the manual entry form below.")
         
         # PDF Upload Section
         st.subheader("📄 Upload Window Sticker PDFs")
