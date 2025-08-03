@@ -77,90 +77,26 @@ def create_chrome_driver(headless=True, download_dir=None):
         }
         options.add_experimental_option("prefs", prefs)
     
-    # Advanced anti-detection measures
+    # Essential Chrome options for cloud environment
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
     options.add_argument("--disable-crash-reporter")
     options.add_argument("--disable-extensions")
-    options.add_argument("--disable-in-process-stack-traces")
     options.add_argument("--disable-logging")
-    options.add_argument("--disable-dev-tools")
     options.add_argument("--log-level=3")
-    options.add_argument("--output=/dev/null")
     
-    # Critical anti-detection flags
+    # Basic anti-detection (only the essential ones)
     options.add_argument("--disable-blink-features=AutomationControlled")
     options.add_experimental_option("excludeSwitches", ["enable-automation"])
     options.add_experimental_option('useAutomationExtension', False)
     
-    # More realistic user agent (Windows instead of Linux)
-    options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+    # Realistic user agent
+    options.add_argument("--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
     
-    # Additional stealth options
-    options.add_argument("--disable-web-security")
-    options.add_argument("--allow-running-insecure-content")
-    options.add_argument("--disable-features=TranslateUI")
-    options.add_argument("--disable-ipc-flooding-protection")
-    options.add_argument("--no-first-run")
-    options.add_argument("--no-service-autorun")
-    options.add_argument("--password-store=basic")
-    options.add_argument("--use-mock-keychain")
-    options.add_argument("--disable-component-extensions-with-background-pages")
-    options.add_argument("--disable-default-apps")
-    options.add_argument("--mute-audio")
-    options.add_argument("--no-zygote")
-    options.add_argument("--disable-background-timer-throttling")
-    options.add_argument("--disable-renderer-backgrounding")
-    options.add_argument("--disable-backgrounding-occluded-windows")
-    
-    # Window size to match common resolutions
-    options.add_argument("--window-size=1366,768")
-    
-    # Define stealth JavaScript for all driver creation methods
+    # Simple stealth JavaScript - just the essentials
     stealth_js = """
-    // Remove webdriver property
     Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-    
-    // Mock plugins array
-    Object.defineProperty(navigator, 'plugins', {
-        get: () => [1, 2, 3, 4, 5]
-    });
-    
-    // Mock languages
-    Object.defineProperty(navigator, 'languages', {
-        get: () => ['en-US', 'en']
-    });
-    
-    // Override the `plugins` property to use a custom getter.
-    Object.defineProperty(navigator, 'plugins', {
-      get: () => [
-        {
-          0: {type: "application/x-google-chrome-pdf", suffixes: "pdf", description: "Portable Document Format", enabledPlugin: Plugin},
-          description: "Portable Document Format",
-          filename: "internal-pdf-viewer",
-          length: 1,
-          name: "Chrome PDF Plugin"
-        }
-      ]
-    });
-    
-    // Pass the Permissions Test
-    const originalQuery = window.navigator.permissions.query;
-    window.navigator.permissions.query = (parameters) => (
-        parameters.name === 'notifications' ?
-            Promise.resolve({ state: Notification.permission }) :
-            originalQuery(parameters)
-    );
-    
-    // Mock chrome runtime
-    window.chrome = {
-        runtime: {}
-    };
-    
-    // Mock screen properties
-    Object.defineProperty(screen, 'availHeight', {get: () => 738});
-    Object.defineProperty(screen, 'availWidth', {get: () => 1366});
     """
     
     # Try different approaches for driver creation
@@ -231,34 +167,12 @@ def fetch_sticker_pdf_browser(vin: str, timeout: int = 30) -> bytes:
         driver = create_chrome_driver(headless=True, download_dir=download_dir)
         driver.set_page_load_timeout(timeout)
         
-        # Navigate to the URL with human-like behavior
+        # Navigate to the URL
         print(f"Navigating to: {url}")
         driver.get(url)
         
-        # Human-like random delay and mouse movement
-        import random
-        initial_delay = random.uniform(3, 7)  # Random delay between 3-7 seconds
-        time.sleep(initial_delay)
-        
-        # Simulate human behavior - scroll a bit
-        try:
-            driver.execute_script("window.scrollTo(0, Math.floor(Math.random() * 200));")
-            time.sleep(random.uniform(0.5, 1.5))
-            
-            # Move mouse to random location (if not headless, this would be visible)
-            driver.execute_script("""
-                var event = new MouseEvent('mousemove', {
-                    view: window,
-                    bubbles: true,
-                    cancelable: true,
-                    clientX: Math.floor(Math.random() * window.innerWidth),
-                    clientY: Math.floor(Math.random() * window.innerHeight)
-                });
-                document.dispatchEvent(event);
-            """)
-            time.sleep(random.uniform(0.2, 0.8))
-        except:
-            pass  # If simulation fails, continue anyway
+        # Wait for page to load
+        time.sleep(3)
         
         # Debug what we actually got
         current_url = driver.current_url
