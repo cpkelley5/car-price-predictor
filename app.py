@@ -728,16 +728,24 @@ if DATABASE_AVAILABLE and st.session_state.get('show_admin', False):
             enhanced_display.columns = ['VIN', 'Seats', 'Base MSRP', 'Total MSRP', 'Enhanced Date']
             st.dataframe(enhanced_display, use_container_width=True)
         
-        # Show options and standard features data
-        options_data = db.get_vehicle_options()
-        if not options_data.empty:
-            st.subheader("Vehicle Options Data")
-            st.write(f"🔧 {len(options_data)} vehicles with normalized option data")
+        # Show options and standard features data (if methods exist)
+        try:
+            options_data = db.get_vehicle_options()
+            if not options_data.empty:
+                st.subheader("Vehicle Options Data")
+                st.write(f"🔧 {len(options_data)} vehicles with normalized option data")
+        except AttributeError:
+            # Method doesn't exist yet in production database
+            pass
             
-        standard_features_data = db.get_standard_features()
-        if not standard_features_data.empty:
-            st.subheader("Standard Features Data")
-            st.write(f"⭐ {len(standard_features_data)} vehicles with standard feature data")
+        try:
+            standard_features_data = db.get_standard_features()
+            if not standard_features_data.empty:
+                st.subheader("Standard Features Data")
+                st.write(f"⭐ {len(standard_features_data)} vehicles with standard feature data")
+        except AttributeError:
+            # Method doesn't exist yet in production database
+            pass
     
     with tab2:
         st.subheader("🎯 Window Sticker Data Enhancement")
@@ -1249,19 +1257,27 @@ if DATABASE_AVAILABLE and st.session_state.get('show_admin', False):
                                 parse_notes=f"Parsed from uploaded PDF: {uploaded_file.name}"
                             )
                             
-                            # Also store normalized options if parsed
+                            # Also store normalized options if parsed (if method exists)
                             if hasattr(sticker_data, 'NormalizedOptions') and sticker_data.NormalizedOptions:
-                                options_success, options_message = db.add_vehicle_options(
-                                    vin=sticker_data.VIN,
-                                    **sticker_data.NormalizedOptions
-                                )
+                                try:
+                                    options_success, options_message = db.add_vehicle_options(
+                                        vin=sticker_data.VIN,
+                                        **sticker_data.NormalizedOptions
+                                    )
+                                except AttributeError:
+                                    # Method doesn't exist yet, skip for now
+                                    options_success, options_message = False, "Options storage not available yet"
                             
-                            # Store standard features if parsed
+                            # Store standard features if parsed (if method exists)
                             if hasattr(sticker_data, 'StandardFeatures') and sticker_data.StandardFeatures:
-                                features_success, features_message = db.add_standard_features(
-                                    vin=sticker_data.VIN,
-                                    **sticker_data.StandardFeatures
-                                )
+                                try:
+                                    features_success, features_message = db.add_standard_features(
+                                        vin=sticker_data.VIN,
+                                        **sticker_data.StandardFeatures
+                                    )
+                                except AttributeError:
+                                    # Method doesn't exist yet, skip for now
+                                    features_success, features_message = False, "Standard features storage not available yet"
                             
                             if success:
                                 action = "Enhanced existing VIN" if vin_exists else "Added new VIN"
