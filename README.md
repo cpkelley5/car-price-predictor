@@ -42,7 +42,7 @@ The prediction model uses these vehicle characteristics:
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/car-price-predictor.git
+git clone https://github.com/cpkelley5/car-price-predictor.git
 cd car-price-predictor
 
 # Install dependencies
