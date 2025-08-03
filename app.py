@@ -7,16 +7,20 @@ import plotly.graph_objects as go
 from datetime import datetime
 
 st.set_page_config(
-    page_title="Hyundai Palisade Price Predictor",
+    page_title="Car Price Predictor",
     page_icon="🚗",
     layout="wide"
 )
 
 # Title and description
-st.title("🚗 2026 Hyundai Palisade Price Predictor")
+st.title("🚗 Car Price Predictor")
 st.markdown("""
-This app predicts whether a Hyundai Palisade listing is priced fairly based on its characteristics.
+**Current Model: 2026 Hyundai Palisade** 
+
+This app predicts whether a vehicle listing is priced fairly based on its characteristics.
 Enter the vehicle details below to get a price prediction and evaluation.
+
+*More car models coming soon!*
 """)
 
 # Load model function

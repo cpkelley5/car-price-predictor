@@ -1,6 +1,6 @@
-# 🚗 Hyundai Palisade Price Predictor
+# 🚗 Car Price Predictor
 
-A Streamlit web application that predicts fair market prices for 2026 Hyundai Palisade vehicles based on their characteristics.
+A Streamlit web application that predicts fair market prices for vehicles based on their characteristics. Currently supports 2026 Hyundai Palisade with plans to expand to other models.
 
 ## 🎯 Features
 
@@ -11,7 +11,7 @@ A Streamlit web application that predicts fair market prices for 2026 Hyundai Pa
 
 ## 🚀 Live Demo
 
-[Visit the live app on Streamlit Cloud](https://your-app-url-here.streamlit.app)
+[Visit the live app on Streamlit Cloud](https://car-price-predictor.streamlit.app)
 
 ## 📋 How It Works
 
@@ -20,7 +20,7 @@ A Streamlit web application that predicts fair market prices for 2026 Hyundai Pa
 3. **Get Prediction**: Click "Predict Price" to see the analysis
 4. **Evaluate Deal**: See if the price is fair, overpriced, or a good deal
 
-## 🔧 Model Features
+## 🔧 Current Model: 2026 Hyundai Palisade
 
 The prediction model uses these vehicle characteristics:
 
@@ -29,6 +29,8 @@ The prediction model uses these vehicle characteristics:
 - **City MPG**: 15-25 range
 - **Exterior Colors**: Abyss Black, Classy Blue, Creamy White, Ecotronic Gray
 - **Interior Colors**: Black, Brown, Gray, Gray/Navy, Navy/Brown
+
+*More vehicle models coming soon!*
 
 ## 📊 Price Evaluation
 
@@ -40,8 +42,8 @@ The prediction model uses these vehicle characteristics:
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/palisade-price-predictor.git
-cd palisade-price-predictor
+git clone https://github.com/yourusername/car-price-predictor.git
+cd car-price-predictor
 
 # Install dependencies
 pip install -r requirements.txt
@@ -53,15 +55,17 @@ streamlit run app.py
 ## 📁 Project Structure
 
 ```
-palisade-price-predictor/
+car-price-predictor/
 ├── app.py                      # Main Streamlit application
-├── palisade_price_model.pkl    # Trained ML model
+├── palisade_price_model.pkl    # Trained ML model (Palisade)
 ├── requirements.txt            # Python dependencies
 ├── README.md                   # Project documentation
 └── run_app.sh                  # Local run script
 ```
 
 ## 🤖 Model Information
+
+### Current Model: 2026 Hyundai Palisade
 
 The prediction model was trained on 2026 Hyundai Palisade data using scikit-learn. It uses one-hot encoding for categorical features and includes:
 
