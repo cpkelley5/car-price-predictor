@@ -168,26 +168,69 @@ def fetch_sticker_pdf_browser(vin: str, timeout: int = 30) -> bytes:
         
         # Look for and click the "Window Sticker" button
         try:
-            # Try multiple selectors for the Window Sticker button
+            # First, let's debug what's on the page
+            page_source = driver.page_source
+            print(f"Page loaded for VIN {vin}, looking for Window Sticker button...")
+            
+            # Try multiple selectors for the Window Sticker button - start with exact match
             button_selectors = [
+                # Exact match based on provided HTML
+                "//a[contains(@class, 'main-cta') and contains(@class, 'vdp-pricebox-cta-button') and @data-cta-name='windowSticker']",
+                "//a[@data-cta-name='windowSticker']",
+                "//a[contains(@class, 'main-cta') and contains(@data-cta-name, 'windowSticker')]",
+                "//a[contains(@class, 'vdp-pricebox-cta-button') and span[text()='Window Sticker']]",
+                "//a[contains(@class, 'main-cta') and span[text()='Window Sticker']]",
+                
+                # Broader matches for the same pattern
+                "//a[contains(@class, 'main-cta') and contains(., 'Window Sticker')]",
+                "//a[contains(@class, 'vdp-pricebox-cta-button') and contains(., 'Window Sticker')]",
+                "//a[span[text()='Window Sticker']]",
+                "//a[span[contains(text(), 'Window Sticker')]]",
+                
+                # Fallback to original selectors
+                "//a[contains(text(), 'Window Sticker')]",
+                "//*[contains(text(), 'Window Sticker')]",
                 "//button[contains(text(), 'Window Sticker')]",
-                "//a[contains(text(), 'Window Sticker')]", 
-                "//button[contains(@class, 'window-sticker')]",
-                "//a[contains(@class, 'window-sticker')]",
-                "//*[contains(text(), 'Window Sticker') and (self::button or self::a)]"
+                
+                # Class-based fallbacks
+                "//a[contains(@class, 'sticker')]",
+                "//a[contains(@data-cta-name, 'sticker')]"
             ]
             
             button_found = False
-            for selector in button_selectors:
+            used_selector = None
+            
+            for i, selector in enumerate(button_selectors):
                 try:
-                    button = WebDriverWait(driver, 5).until(
+                    print(f"Trying selector {i+1}: {selector}")
+                    button = WebDriverWait(driver, 3).until(
                         EC.element_to_be_clickable((By.XPATH, selector))
                     )
-                    button.click()
+                    # Check if this is a link with href - we might need to navigate directly
+                    if button.tag_name == 'a' and button.get_attribute('href'):
+                        href = button.get_attribute('href')
+                        print(f"Found Window Sticker link: {href}")
+                        
+                        # Check if target="_blank" - if so, navigate directly instead of clicking
+                        target = button.get_attribute('target')
+                        if target == '_blank':
+                            print(f"Link opens in new tab, navigating directly to: {href}")
+                            driver.get(href)
+                            time.sleep(3)  # Wait for page load
+                        else:
+                            button.click()
+                    else:
+                        button.click()
+                    
                     button_found = True
-                    print(f"Clicked Window Sticker button for VIN {vin}")
+                    used_selector = selector
+                    print(f"SUCCESS: Clicked/navigated Window Sticker button for VIN {vin} using selector {i+1}")
                     break
                 except TimeoutException:
+                    print(f"Selector {i+1} failed: not found or not clickable")
+                    continue
+                except Exception as e:
+                    print(f"Selector {i+1} failed with error: {e}")
                     continue
             
             if button_found:
@@ -224,16 +267,51 @@ def fetch_sticker_pdf_browser(vin: str, timeout: int = 30) -> bytes:
                 # If we get here, download timed out
                 raise TimeoutException(f"PDF download timed out for VIN {vin}")
             else:
-                # Button not found, check page for errors
-                page_source = driver.page_source.lower()
-                if "403" in page_source or "forbidden" in page_source:
+                # Button not found, let's debug what's available
+                print(f"No Window Sticker button found for VIN {vin}. Debugging available buttons...")
+                
+                # Find all buttons and links on the page for debugging
+                try:
+                    all_buttons = driver.find_elements(By.TAG_NAME, "button")
+                    all_links = driver.find_elements(By.TAG_NAME, "a")
+                    
+                    print(f"Found {len(all_buttons)} buttons and {len(all_links)} links")
+                    
+                    # Show button texts
+                    button_texts = []
+                    for btn in all_buttons[:10]:  # Limit to first 10
+                        try:
+                            text = btn.text.strip()
+                            if text:
+                                button_texts.append(text)
+                        except:
+                            pass
+                    
+                    link_texts = []
+                    for link in all_links[:10]:  # Limit to first 10
+                        try:
+                            text = link.text.strip()
+                            if text and len(text) < 50:  # Reasonable length
+                                link_texts.append(text)
+                        except:
+                            pass
+                    
+                    print(f"Button texts found: {button_texts}")
+                    print(f"Link texts found: {link_texts}")
+                    
+                except Exception as debug_error:
+                    print(f"Debug error: {debug_error}")
+                
+                # Check page for errors
+                page_source_lower = page_source.lower()
+                if "403" in page_source_lower or "forbidden" in page_source_lower:
                     raise requests.exceptions.HTTPError(f"Access denied for VIN {vin}")
-                elif "not found" in page_source or "404" in page_source:
+                elif "not found" in page_source_lower or "404" in page_source_lower:
                     raise requests.exceptions.HTTPError(f"Window sticker not found for VIN {vin}")
-                elif "invalid" in page_source and "vin" in page_source:
+                elif "invalid" in page_source_lower and "vin" in page_source_lower:
                     raise requests.exceptions.HTTPError(f"Invalid VIN {vin} according to dealership")
                 else:
-                    raise ValueError(f"Could not find Window Sticker button for VIN {vin}")
+                    raise ValueError(f"Could not find Window Sticker button for VIN {vin}. Available buttons: {button_texts[:3]}, Available links: {link_texts[:3]}")
                 
         except Exception as e:
             print(f"Error during browser automation for VIN {vin}: {e}")
