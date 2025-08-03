@@ -1176,60 +1176,6 @@ if DATABASE_AVAILABLE and st.session_state.get('show_admin', False):
             except Exception as e:
                 st.error(f"Error retrieving enhanced data: {e}")
         
-        st.divider()
-        
-        # Manual data entry form
-        if single_vin:
-            st.subheader("📝 Manual Window Sticker Data Entry")
-            st.info("If auto-enhancement fails, you can manually enter the data from the downloaded PDF:")
-            
-            with st.expander("Enter Window Sticker Data"):
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    manual_seats = st.selectbox("Seats", ["", "7", "8"])
-                    manual_engine = st.text_input("Engine", placeholder="3.5L V6")
-                    manual_horsepower = st.text_input("Horsepower", placeholder="291")
-                    manual_base_msrp = st.number_input("Base MSRP ($)", min_value=0, value=0, step=100)
-                
-                with col2:
-                    manual_dest_charge = st.number_input("Destination Charge ($)", min_value=0, value=1375, step=25)
-                    manual_total_msrp = st.number_input("Total MSRP ($)", min_value=0, value=0, step=100)
-                    manual_packages = st.text_area("Packages", placeholder="Convenience Package; Premium Package")
-                    manual_options = st.text_area("Options", placeholder="Option 1; Option 2")
-                
-                if st.button("💾 Save Manual Data") and single_vin:
-                    # Convert empty strings to None
-                    manual_base_msrp = manual_base_msrp if manual_base_msrp > 0 else None
-                    manual_dest_charge = manual_dest_charge if manual_dest_charge > 0 else None
-                    manual_total_msrp = manual_total_msrp if manual_total_msrp > 0 else None
-                    manual_packages = manual_packages.strip() if manual_packages.strip() else None
-                    manual_options = manual_options.strip() if manual_options.strip() else None
-                    manual_seats = manual_seats if manual_seats else None
-                    manual_engine = manual_engine.strip() if manual_engine.strip() else None
-                    manual_horsepower = manual_horsepower.strip() if manual_horsepower.strip() else None
-                    
-                    sticker_url = f"https://www.collegeparkhyundai.com/dealer-inspire-inventory/window-stickers/hyundai/?vin={single_vin.strip()}"
-                    
-                    success, message = db.add_enhanced_features(
-                        vin=single_vin.strip().upper(),
-                        seats=manual_seats,
-                        engine=manual_engine,
-                        horsepower=manual_horsepower,
-                        base_msrp=manual_base_msrp,
-                        destination_charge=manual_dest_charge,
-                        total_msrp=manual_total_msrp,
-                        packages=manual_packages,
-                        options=manual_options,
-                        sticker_url=sticker_url,
-                        parse_notes="Manually entered data"
-                    )
-                    
-                    if success:
-                        st.success(f"✅ {message}")
-                        st.balloons()
-                    else:
-                        st.error(f"❌ {message}")
     
     with tab3:
         st.subheader("📈 Enhanced Data Analytics")
