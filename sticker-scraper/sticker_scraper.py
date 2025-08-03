@@ -161,15 +161,40 @@ def fetch_sticker_pdf_browser(vin: str, timeout: int = 30) -> bytes:
         driver.set_page_load_timeout(timeout)
         
         # Navigate to the URL
+        print(f"Navigating to: {url}")
         driver.get(url)
         
         # Wait a bit to let any JS load
-        time.sleep(3)
+        time.sleep(5)  # Increased wait time
+        
+        # Debug what we actually got
+        current_url = driver.current_url
+        page_title = driver.title
+        page_source = driver.page_source
+        
+        print(f"Current URL: {current_url}")
+        print(f"Page title: {page_title}")
+        print(f"Page source length: {len(page_source)} characters")
+        
+        # Check if we got redirected or blocked
+        if current_url != url:
+            print(f"WARNING: Redirected from {url} to {current_url}")
+        
+        # Check for common blocking indicators
+        if len(page_source) < 1000:
+            print("WARNING: Very short page source, might be blocked or error page")
+            print(f"Page content preview: {page_source[:500]}")
+        
+        # Take a screenshot for debugging (save to temp dir)
+        try:
+            screenshot_path = os.path.join(download_dir, f"debug_screenshot_{vin}.png")
+            driver.save_screenshot(screenshot_path)
+            print(f"Screenshot saved: {screenshot_path}")
+        except Exception as screenshot_error:
+            print(f"Could not save screenshot: {screenshot_error}")
         
         # Look for and click the "Window Sticker" button
         try:
-            # First, let's debug what's on the page
-            page_source = driver.page_source
             print(f"Page loaded for VIN {vin}, looking for Window Sticker button...")
             
             # Try multiple selectors for the Window Sticker button - start with exact match
@@ -302,16 +327,32 @@ def fetch_sticker_pdf_browser(vin: str, timeout: int = 30) -> bytes:
                 except Exception as debug_error:
                     print(f"Debug error: {debug_error}")
                 
-                # Check page for errors
+                # Check page for errors and blocking
                 page_source_lower = page_source.lower()
-                if "403" in page_source_lower or "forbidden" in page_source_lower:
-                    raise requests.exceptions.HTTPError(f"Access denied for VIN {vin}")
+                
+                # Common bot detection/blocking patterns
+                blocking_indicators = [
+                    "access denied", "forbidden", "403",
+                    "cloudflare", "security check", "ddos protection",
+                    "bot detection", "unusual traffic", "captcha",
+                    "verify you are human", "please wait", "checking browser"
+                ]
+                
+                found_blocking = []
+                for indicator in blocking_indicators:
+                    if indicator in page_source_lower:
+                        found_blocking.append(indicator)
+                
+                if found_blocking:
+                    raise requests.exceptions.HTTPError(f"Bot detection/blocking detected for VIN {vin}: {found_blocking}")
                 elif "not found" in page_source_lower or "404" in page_source_lower:
                     raise requests.exceptions.HTTPError(f"Window sticker not found for VIN {vin}")
                 elif "invalid" in page_source_lower and "vin" in page_source_lower:
                     raise requests.exceptions.HTTPError(f"Invalid VIN {vin} according to dealership")
+                elif len(page_source) < 1000:
+                    raise ValueError(f"Page appears to be blocked or empty for VIN {vin}. Page length: {len(page_source)}")
                 else:
-                    raise ValueError(f"Could not find Window Sticker button for VIN {vin}. Available buttons: {button_texts[:3]}, Available links: {link_texts[:3]}")
+                    raise ValueError(f"Could not find Window Sticker button for VIN {vin}. Available buttons: {button_texts[:3]}, Available links: {link_texts[:3]}. Page title: '{page_title}'")
                 
         except Exception as e:
             print(f"Error during browser automation for VIN {vin}: {e}")
