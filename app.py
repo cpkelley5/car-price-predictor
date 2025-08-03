@@ -618,17 +618,21 @@ with admin_expander:
     admin_password = st.text_input("Admin Password", type="password", key="admin_pass")
     
     # Simple password check (in production, use proper authentication)
-    admin_hash = "5994471abb01112afcc18159f6cc74b4f511b99806da59b3caf5a9c173cacfc5"  # "admin"
+    admin_hash = "bc7bf2b436c030a3002771e017d7351d1d070bb32ba296ec6474fb0908d821b3"  # "admin.3289"
     
     if admin_password and hashlib.sha256(admin_password.encode()).hexdigest() == admin_hash:
+        st.success("✅ Admin access granted")
         if st.button("🔧 Open Admin Dashboard"):
             st.session_state.show_admin = True
+    elif admin_password:
+        st.error("❌ Invalid admin password")
 
 # Admin Dashboard
 if DATABASE_AVAILABLE and st.session_state.get('show_admin', False):
     st.header("🔧 Admin Dashboard")
     
     # Check if user is authenticated
+    admin_hash = "bc7bf2b436c030a3002771e017d7351d1d070bb32ba296ec6474fb0908d821b3"  # "admin.3289"
     if not (admin_password and hashlib.sha256(admin_password.encode()).hexdigest() == admin_hash):
         st.error("⚠️ Admin access required")
         st.session_state.show_admin = False
