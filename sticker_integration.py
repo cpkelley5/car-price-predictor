@@ -83,21 +83,31 @@ class StickerDataEnhancer:
         except Exception as e:
             return False, f"Error enhancing VIN {vin}: {str(e)}", None
     
-    def enhance_multiple_vins(self, vins: List[str], delay_sec: float = 0.5) -> Dict[str, tuple[bool, str]]:
-        """Enhance multiple VINs with progress tracking"""
+    def enhance_multiple_vins(self, vins: List[str], delay_sec: float = 2.0) -> Dict[str, tuple[bool, str]]:
+        """Enhance multiple VINs with progress tracking and respectful delays"""
         import time
+        import random
         
         results = {}
-        for vin in vins:
+        for i, vin in enumerate(vins):
             vin = vin.strip()
             if not vin:
                 continue
                 
-            success, message, _ = self.enhance_single_vin(vin)
-            results[vin] = (success, message)
-            
-            # Be polite to the server
-            time.sleep(delay_sec)
+            try:
+                success, message, _ = self.enhance_single_vin(vin)
+                results[vin] = (success, message)
+                
+                # Be very polite to the server - randomized delays to look more human
+                if i < len(vins) - 1:  # Don't delay after the last VIN
+                    actual_delay = delay_sec + random.uniform(0.5, 2.0)  # 2.5-4 second range
+                    time.sleep(actual_delay)
+                    
+            except Exception as e:
+                results[vin] = (False, f"Unexpected error: {str(e)}")
+                # If we hit errors, wait even longer
+                if "403" in str(e) or "Forbidden" in str(e):
+                    time.sleep(10)  # Wait 10 seconds on 403 errors
         
         return results
     

@@ -672,6 +672,7 @@ if DATABASE_AVAILABLE and st.session_state.get('show_admin', False):
         available, message = enhancer.check_scraper_availability()
         if available:
             st.success(f"✅ {message}")
+            st.info("ℹ️ **Rate Limiting**: The scraper uses respectful delays (2-4 seconds) between requests to avoid being blocked by the dealership.")
         else:
             st.error(f"❌ {message}")
             st.info("To enable scraper: `pip install requests pdfplumber`")
@@ -696,9 +697,10 @@ if DATABASE_AVAILABLE and st.session_state.get('show_admin', False):
             st.dataframe(candidates)
             
             if available and st.button("🚀 Enhance All VINs", type="primary"):
+                st.warning("⚠️ This will take 2-4 seconds per VIN to avoid rate limiting. Please be patient.")
                 with st.spinner("Enhancing VINs with window sticker data..."):
                     vins_to_enhance = candidates['vin'].tolist()
-                    results = enhancer.enhance_multiple_vins(vins_to_enhance[:5])  # Limit to 5 for demo
+                    results = enhancer.enhance_multiple_vins(vins_to_enhance[:3])  # Limit to 3 for demo
                     
                     success_count = sum(1 for success, _ in results.values() if success)
                     st.success(f"✅ Enhanced {success_count}/{len(results)} VINs")
