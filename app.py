@@ -672,10 +672,14 @@ if DATABASE_AVAILABLE and st.session_state.get('show_admin', False):
         available, message = enhancer.check_scraper_availability()
         if available:
             st.success(f"✅ {message}")
+            if "browser automation" in message:
+                st.info("🌐 **Browser Mode Available**: Can use real Chrome browser to bypass bot detection!")
+            else:
+                st.warning("⚠️ **Browser Mode Unavailable**: Install selenium for better bot detection bypass: `pip install selenium`")
             st.info("ℹ️ **Rate Limiting**: The scraper uses respectful delays (2-4 seconds) between requests to avoid being blocked by the dealership.")
         else:
             st.error(f"❌ {message}")
-            st.info("To enable scraper: `pip install requests pdfplumber`")
+            st.info("To enable scraper: `pip install requests pdfplumber selenium`")
         
         # Enhancement stats
         enhancement_stats = enhancer.get_enhancement_stats()
@@ -720,11 +724,11 @@ if DATABASE_AVAILABLE and st.session_state.get('show_admin', False):
         st.subheader("Enhance Single VIN")
         single_vin = st.text_input("VIN to enhance", placeholder="KM8RM5S22TU019312")
         
-        col1, col2 = st.columns(2)
+        col1, col2, col3 = st.columns(3)
         with col1:
-            if st.button("🤖 Auto-Enhance VIN") and single_vin and available:
-                with st.spinner(f"Enhancing VIN {single_vin}..."):
-                    success, message, sticker_data = enhancer.enhance_single_vin(single_vin)
+            if st.button("🤖 Auto-Enhance (Requests)") and single_vin and available:
+                with st.spinner(f"Enhancing VIN {single_vin} with requests..."):
+                    success, message, sticker_data = enhancer.enhance_single_vin(single_vin, use_browser=False)
                     if success:
                         st.success(message)
                         if sticker_data:
@@ -740,9 +744,29 @@ if DATABASE_AVAILABLE and st.session_state.get('show_admin', False):
                     else:
                         st.error(message)
                         if "403" in message or "Forbidden" in message:
-                            st.info("💡 **Workaround**: The dealership is blocking automated requests, but you can manually download the sticker using the method below.")
+                            st.info("💡 **Try Browser Mode**: Click 'Browser Mode' button to bypass bot detection.")
         
         with col2:
+            browser_available = "browser automation" in message if available else False
+            if st.button("🌐 Auto-Enhance (Browser)", disabled=not browser_available) and single_vin and available:
+                with st.spinner(f"Enhancing VIN {single_vin} with browser automation..."):
+                    success, message, sticker_data = enhancer.enhance_single_vin(single_vin, use_browser=True)
+                    if success:
+                        st.success(message)
+                        if sticker_data:
+                            st.json({
+                                "Trim": sticker_data.Trim,
+                                "Seats": sticker_data.Seats,
+                                "Engine": sticker_data.Engine,
+                                "Base MSRP": sticker_data.BaseMSRP,
+                                "Total MSRP": sticker_data.TotalMSRP,
+                                "Packages": sticker_data.Packages,
+                                "Parse Notes": sticker_data.ParseNotes
+                            })
+                    else:
+                        st.error(message)
+        
+        with col3:
             if st.button("🌐 Get Sticker URL") and single_vin:
                 sticker_url = f"https://www.collegeparkhyundai.com/dealer-inspire-inventory/window-stickers/hyundai/?vin={single_vin.strip()}"
                 st.success("✅ Sticker URL generated!")

@@ -37,11 +37,108 @@ from typing import List, Dict, Optional
 import requests
 import pdfplumber
 
+# Optional browser automation support
+try:
+    from selenium import webdriver
+    from selenium.webdriver.chrome.options import Options
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.support.ui import WebDriverWait
+    from selenium.webdriver.support import expected_conditions as EC
+    from selenium.common.exceptions import TimeoutException, WebDriverException
+    SELENIUM_AVAILABLE = True
+except ImportError:
+    SELENIUM_AVAILABLE = False
+
 # Optional future OCR support (disabled by default)
 # import pytesseract
 # from pdf2image import convert_from_bytes
 
 COLLEGE_PARK_STICKER_URL = "https://www.collegeparkhyundai.com/dealer-inspire-inventory/window-stickers/hyundai/?vin={vin}"
+
+def create_chrome_driver(headless=True):
+    """Create a Chrome WebDriver with realistic settings"""
+    if not SELENIUM_AVAILABLE:
+        raise ImportError("Selenium not available. Install with: pip install selenium")
+    
+    options = Options()
+    if headless:
+        options.add_argument("--headless")
+    
+    # Make browser look more realistic
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-blink-features=AutomationControlled")
+    options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    options.add_experimental_option('useAutomationExtension', False)
+    options.add_argument("--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+    
+    try:
+        driver = webdriver.Chrome(options=options)
+        # Execute script to remove webdriver property
+        driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+        return driver
+    except WebDriverException as e:
+        raise WebDriverException(f"Failed to create Chrome driver. Make sure ChromeDriver is installed: {e}")
+
+def fetch_sticker_pdf_browser(vin: str, timeout: int = 30) -> bytes:
+    """Fetch sticker PDF using real browser to bypass bot detection"""
+    if not SELENIUM_AVAILABLE:
+        raise ImportError("Browser mode requires selenium. Install with: pip install selenium")
+    
+    url = COLLEGE_PARK_STICKER_URL.format(vin=vin.strip())
+    driver = None
+    
+    try:
+        driver = create_chrome_driver(headless=True)
+        driver.set_page_load_timeout(timeout)
+        
+        # Navigate to the URL
+        driver.get(url)
+        
+        # Wait a bit to let any JS load
+        time.sleep(2)
+        
+        # Check if we got a PDF response by examining the content type or page
+        page_source = driver.page_source.lower()
+        
+        # If the page contains PDF content or redirects to PDF
+        if "pdf" in page_source or driver.current_url.endswith('.pdf'):
+            # Get the PDF content - this is tricky with Selenium
+            # We'll use requests with the session cookies from Selenium
+            cookies = driver.get_cookies()
+            
+            # Create a requests session with the browser cookies
+            session = requests.Session()
+            for cookie in cookies:
+                session.cookies.set(cookie['name'], cookie['value'])
+            
+            # Add the same headers the browser would use
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Accept": "application/pdf,*/*",
+                "Referer": url
+            }
+            
+            # Now try to get the PDF with the authenticated session
+            response = session.get(url, headers=headers, timeout=timeout)
+            response.raise_for_status()
+            
+            if response.content.startswith(b"%PDF"):
+                return response.content
+            else:
+                raise ValueError(f"Response for VIN {vin} was not a PDF")
+        else:
+            # Check for error messages
+            if "403" in page_source or "forbidden" in page_source:
+                raise requests.exceptions.HTTPError(f"Access denied for VIN {vin} even with browser automation")
+            elif "not found" in page_source or "404" in page_source:
+                raise requests.exceptions.HTTPError(f"Window sticker not found for VIN {vin}")
+            else:
+                raise ValueError(f"Unexpected page content for VIN {vin}")
+                
+    finally:
+        if driver:
+            driver.quit()
 
 # ------------------------------
 # Helpers
