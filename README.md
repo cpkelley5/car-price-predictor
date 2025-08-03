@@ -11,7 +11,7 @@ A Streamlit web application that predicts fair market prices for vehicles based 
 
 ## 🚀 Live Demo
 
-[Visit the live app on Streamlit Cloud](https://car-price-predictor.streamlit.app)
+[Visit the live app on Streamlit Cloud](https://car-pricer.streamlit.app)
 
 ## 📋 How It Works
 
