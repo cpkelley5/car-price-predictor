@@ -816,6 +816,8 @@ if DATABASE_AVAILABLE and st.session_state.get('show_admin', False):
             
             # Quick VIN extraction to check if we should process each file
             files_to_process = []
+            debug_info = []
+            
             for uploaded_file in uploaded_files:
                 # Quick peek at file content to extract VIN
                 try:
@@ -837,14 +839,31 @@ if DATABASE_AVAILABLE and st.session_state.get('show_admin', False):
                         
                         if vin_match:
                             vin = vin_match.group(1)
+                            debug_info.append(f"Found VIN: {vin}")
                             if vin not in st.session_state.processed_vins:
                                 files_to_process.append((uploaded_file, vin))
+                                debug_info.append(f"Will process VIN: {vin}")
+                            else:
+                                debug_info.append(f"Already processed VIN: {vin}")
+                        else:
+                            debug_info.append("No VIN found in PDF")
+                            files_to_process.append((uploaded_file, None))
                     except ImportError:
+                        debug_info.append("PDF parser not available")
                         # If we can't extract VIN, process anyway
                         files_to_process.append((uploaded_file, None))
-                except Exception:
+                except Exception as e:
+                    debug_info.append(f"Error reading PDF: {str(e)}")
                     # If we can't read file, process anyway
                     files_to_process.append((uploaded_file, None))
+            
+            # Show debug info
+            if debug_info:
+                st.write("**Debug Info:**")
+                for info in debug_info:
+                    st.write(f"• {info}")
+                st.write(f"• Processed VINs in session: {list(st.session_state.processed_vins)}")
+                st.write(f"• Files to process: {len(files_to_process)}")
             
             if files_to_process:
                 with st.spinner("Processing PDF files..."):
