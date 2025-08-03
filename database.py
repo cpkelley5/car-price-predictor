@@ -32,6 +32,7 @@ class PalisadeDatabase:
                 city_mpg INTEGER NOT NULL,
                 ext_color TEXT NOT NULL,
                 int_color TEXT NOT NULL,
+                zip_code TEXT,
                 submission_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 verified BOOLEAN DEFAULT FALSE,
                 source TEXT DEFAULT 'user_submission'
@@ -83,7 +84,7 @@ class PalisadeDatabase:
         conn.close()
         return exists
     
-    def add_vehicle_data(self, vin, price, trim, drivetrain, city_mpg, ext_color, int_color, verified=False):
+    def add_vehicle_data(self, vin, price, trim, drivetrain, city_mpg, ext_color, int_color, zip_code=None, verified=False):
         """Add new vehicle data to database"""
         # Validate VIN first
         is_valid, message = self.validate_vin(vin)
@@ -104,9 +105,9 @@ class PalisadeDatabase:
             cursor = conn.cursor()
             cursor.execute('''
                 INSERT INTO vehicle_data 
-                (vin, price, trim, drivetrain, city_mpg, ext_color, int_color, verified)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (vin, price, trim, drivetrain, city_mpg, ext_color, int_color, verified))
+                (vin, price, trim, drivetrain, city_mpg, ext_color, int_color, zip_code, verified)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (vin, price, trim, drivetrain, city_mpg, ext_color, int_color, zip_code, verified))
             conn.commit()
             conn.close()
             return True, "Vehicle data added successfully"
@@ -118,7 +119,7 @@ class PalisadeDatabase:
         conn = sqlite3.connect(self.db_path)
         df = pd.read_sql_query('''
             SELECT vin, price, trim, drivetrain, city_mpg, ext_color, int_color, 
-                   submission_date, verified, source
+                   zip_code, submission_date, verified, source
             FROM vehicle_data 
             ORDER BY submission_date DESC
         ''', conn)
@@ -131,7 +132,8 @@ class PalisadeDatabase:
         where_clause = "WHERE verified = TRUE" if verified_only else ""
         df = pd.read_sql_query(f'''
             SELECT price as Price, trim as Trim, drivetrain as Drivetrain, 
-                   city_mpg as City_mpg, ext_color as ExtColor, int_color as IntColor
+                   city_mpg as City_mpg, ext_color as ExtColor, int_color as IntColor,
+                   zip_code as ZipCode
             FROM vehicle_data 
             {where_clause}
             ORDER BY submission_date DESC
@@ -190,10 +192,11 @@ class PalisadeDatabase:
                 if not self.vin_exists(row['VIN']):
                     cursor.execute('''
                         INSERT INTO vehicle_data 
-                        (vin, price, trim, drivetrain, city_mpg, ext_color, int_color, verified, source)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        (vin, price, trim, drivetrain, city_mpg, ext_color, int_color, zip_code, verified, source)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ''', (row['VIN'], row['Price'], row['Trim'], row['Drivetrain'], 
-                          row['City_mpg'], row['ExtColor'], row['IntColor'], True, 'initial_data'))
+                          row['City_mpg'], row['ExtColor'], row['IntColor'], 
+                          row.get('ZipCode', None), True, 'initial_data'))
                     added_count += 1
             
             conn.commit()

@@ -22,6 +22,7 @@ class PalisadeModelTrainer:
             return None, f"Insufficient data for training. Need at least {min_records} records, have {len(df)}"
         
         # Create one-hot encoded features (same format as original model)
+        # Note: ZipCode is collected but not used in prediction until we have enough data
         encoded_df = pd.get_dummies(df, columns=['Trim', 'Drivetrain', 'ExtColor', 'IntColor'], prefix=['Trim', 'Drivetrain', 'ExtColor', 'IntColor'])
         
         # Ensure all expected columns exist (fill missing with 0)

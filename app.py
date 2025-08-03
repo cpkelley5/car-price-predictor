@@ -257,6 +257,7 @@ with col2:
     int_color = st.selectbox("Interior Color", [
         "Black", "Brown", "Gray", "Gray/Navy", "Navy/Brown"
     ])
+    
 
 # Asking price input
 st.subheader("Price Evaluation")
@@ -270,11 +271,21 @@ with st.expander("📝 Submit Vehicle Data"):
     (only if the VIN is not already in our database). This helps make our model more accurate for everyone.
     """)
     
-    vin_input = st.text_input(
-        "Vehicle VIN (17 characters)", 
-        placeholder="KM8RMES2XTU030770",
-        help="Optional: Provide VIN to contribute to model improvement"
-    )
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        vin_input = st.text_input(
+            "Vehicle VIN (17 characters)", 
+            placeholder="KM8RMES2XTU030770",
+            help="Optional: Provide VIN to contribute to model improvement"
+        )
+    
+    with col2:
+        zip_code = st.text_input(
+            "Vehicle ZIP Code (5 digits)",
+            placeholder="90210",
+            help="Required if providing VIN - helps us understand regional pricing"
+        )
     
     contribute_data = st.checkbox(
         "I confirm this price and vehicle data is accurate", 
@@ -375,49 +386,59 @@ if st.button("Predict Price", type="primary"):
             
             # THEN handle VIN submission as secondary information
             if DATABASE_AVAILABLE and vin_input and contribute_data:
-                # Check for duplicate VIN first
-                vin_cleaned = vin_input.strip().upper()
-                is_valid_vin, vin_message = db.validate_vin(vin_cleaned)
-                
-                if is_valid_vin and db.vin_exists(vin_cleaned):
-                    # Vehicle already exists - show informational message
-                    st.info("ℹ️ **Vehicle Recognition**: This VIN is already in our database, which helped ensure an accurate prediction! No need to re-submit this vehicle data.")
-                elif is_valid_vin:
-                    # New vehicle - attempt to add
-                    success, message = db.add_vehicle_data(
-                        vin=vin_cleaned,
-                        price=asking_price,
-                        trim=trim_level,
-                        drivetrain=drivetrain,
-                        city_mpg=city_mpg,
-                        ext_color=ext_color,
-                        int_color=int_color,
-                        verified=False  # Requires manual verification
-                    )
-                    
-                    if success:
-                        st.success(f"✅ {message} Thank you for contributing to our model!")
-                        
-                        # Check if model should be retrained
-                        trainer = PalisadeModelTrainer()
-                        should_retrain, retrain_message = trainer.should_retrain(new_submissions_threshold=2)
-                        
-                        if should_retrain:
-                            with st.spinner("🔄 Improving model with new data..."):
-                                retrain_success, retrain_result = trainer.retrain_model()
-                                if retrain_success:
-                                    st.info(f"🎯 Model improved! {retrain_result}")
-                                    # Clear cache to reload new model
-                                    st.cache_resource.clear()
-                                else:
-                                    st.warning(f"⚠️ Model update deferred: {retrain_result}")
-                    else:
-                        st.error(f"❌ {message}")
+                # Validate ZIP code if VIN is provided
+                zip_cleaned = zip_code.strip() if zip_code else ""
+                if not zip_cleaned:
+                    st.error("❌ ZIP code is required when submitting a VIN")
+                elif not (zip_cleaned.isdigit() and len(zip_cleaned) == 5):
+                    st.error("❌ ZIP code must be exactly 5 digits")
                 else:
-                    # Invalid VIN
-                    st.error(f"❌ Invalid VIN: {vin_message}")
+                    # Check for duplicate VIN first
+                    vin_cleaned = vin_input.strip().upper()
+                    is_valid_vin, vin_message = db.validate_vin(vin_cleaned)
+                    
+                    if is_valid_vin and db.vin_exists(vin_cleaned):
+                        # Vehicle already exists - show informational message
+                        st.info("ℹ️ **Vehicle Recognition**: This VIN is already in our database, which helped ensure an accurate prediction! No need to re-submit this vehicle data.")
+                    elif is_valid_vin:
+                        # New vehicle - attempt to add
+                        success, message = db.add_vehicle_data(
+                            vin=vin_cleaned,
+                            price=asking_price,
+                            trim=trim_level,
+                            drivetrain=drivetrain,
+                            city_mpg=city_mpg,
+                            ext_color=ext_color,
+                            int_color=int_color,
+                            zip_code=zip_cleaned,
+                            verified=False  # Requires manual verification
+                        )
+                        
+                        if success:
+                            st.success(f"✅ {message} Thank you for contributing to our model!")
+                            
+                            # Check if model should be retrained
+                            trainer = PalisadeModelTrainer()
+                            should_retrain, retrain_message = trainer.should_retrain(new_submissions_threshold=2)
+                            
+                            if should_retrain:
+                                with st.spinner("🔄 Improving model with new data..."):
+                                    retrain_success, retrain_result = trainer.retrain_model()
+                                    if retrain_success:
+                                        st.info(f"🎯 Model improved! {retrain_result}")
+                                        # Clear cache to reload new model
+                                        st.cache_resource.clear()
+                                    else:
+                                        st.warning(f"⚠️ Model update deferred: {retrain_result}")
+                        else:
+                            st.error(f"❌ {message}")
+                    else:
+                        # Invalid VIN
+                        st.error(f"❌ Invalid VIN: {vin_message}")
             elif vin_input and not contribute_data:
                 st.warning("⚠️ Please confirm data accuracy to contribute to model improvement")
+            elif vin_input and not zip_code:
+                st.warning("⚠️ ZIP code is required when submitting a VIN")
             elif not DATABASE_AVAILABLE and vin_input:
                 st.info("ℹ️ VIN submission not available in this deployment")
                 
