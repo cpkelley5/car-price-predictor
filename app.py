@@ -587,6 +587,239 @@ if DATABASE_AVAILABLE and st.session_state.get('show_admin', False):
         except AttributeError:
             # Method doesn't exist yet in production database
             pass
+        
+        # PDF Upload Section
+        st.divider()
+        st.subheader("📄 Upload Window Sticker PDFs")
+        st.info("💡 **Drag & Drop**: Upload window sticker PDF files to automatically extract vehicle data and add to database.")
+        
+        uploaded_files = st.file_uploader(
+            "Drag and drop PDF files here", 
+            type=['pdf'], 
+            accept_multiple_files=True,
+            help="Upload window sticker PDF files to extract vehicle data",
+            label_visibility="collapsed"
+        )
+        
+        if uploaded_files:
+            # Use session state to prevent infinite reprocessing
+            if 'processed_files' not in st.session_state:
+                st.session_state.processed_files = set()
+            
+            files_to_process = []
+            for uploaded_file in uploaded_files:
+                if uploaded_file.name not in st.session_state.processed_files:
+                    files_to_process.append(uploaded_file)
+            
+            if files_to_process:
+                with st.spinner("Processing PDF files..."):
+                    results = []
+                    
+                    for uploaded_file in files_to_process:
+                        try:
+                            # Read PDF content
+                            pdf_bytes = uploaded_file.read()
+                            
+                            # Try to import PDF parsing tools
+                            import sys
+                            import os
+                            sys.path.append(os.path.join(os.path.dirname(__file__), 'sticker-scraper'))
+                            try:
+                                from sticker_scraper import pdf_to_text
+                            except ImportError:
+                                results.append({
+                                    'file': uploaded_file.name,
+                                    'status': 'error',
+                                    'message': 'PDF parsing module not available',
+                                    'vin': None
+                                })
+                                continue
+                            
+                            # Extract text from PDF
+                            text = pdf_to_text(pdf_bytes)
+                            
+                            if not text or len(text.strip()) < 50:
+                                results.append({
+                                    'file': uploaded_file.name,
+                                    'status': 'error',
+                                    'message': 'Could not extract text from PDF (may be scanned image)',
+                                    'vin': None
+                                })
+                                continue
+                            
+                            # Extract VIN from PDF text
+                            import re
+                            vin_match = re.search(r'VIN:\s*([A-HJ-NPR-Z0-9]{17})', text)
+                            if not vin_match:
+                                vin_match = re.search(r'\b([A-HJ-NPR-Z0-9]{17})\b', text)
+                            
+                            if not vin_match:
+                                results.append({
+                                    'file': uploaded_file.name,
+                                    'status': 'error', 
+                                    'message': 'Could not find valid VIN in PDF',
+                                    'vin': None
+                                })
+                                continue
+                            
+                            vin = vin_match.group(1)
+                            
+                            # Extract basic vehicle data from PDF
+                            def extract_basic_data(pdf_text):
+                                data = {'VIN': vin}
+                                
+                                # Extract trim
+                                trim_match = re.search(r'(\d{4})\s+PALISADE\s+([A-Z\s]+)', pdf_text)
+                                if trim_match:
+                                    data['Trim'] = trim_match.group(2).strip()
+                                else:
+                                    data['Trim'] = 'Unknown'
+                                
+                                # Extract drivetrain
+                                if 'FWD' in pdf_text:
+                                    data['Drivetrain'] = 'FWD'
+                                elif 'AWD' in pdf_text:
+                                    data['Drivetrain'] = 'AWD'
+                                else:
+                                    data['Drivetrain'] = 'Unknown'
+                                
+                                # Extract colors
+                                ext_color_match = re.search(r'EXTERIOR COLOR[:\s]*([A-Z\s/\-]+)', pdf_text)
+                                if ext_color_match:
+                                    data['ExteriorColor'] = ext_color_match.group(1).strip()
+                                else:
+                                    data['ExteriorColor'] = 'Unknown'
+                                
+                                int_color_match = re.search(r'INTERIOR[/\s]*(?:SEAT\s+)?COLOR[:\s]*([A-Z\s/\-]+)', pdf_text)
+                                if int_color_match:
+                                    data['InteriorColor'] = int_color_match.group(1).strip()
+                                else:
+                                    data['InteriorColor'] = 'Unknown'
+                                
+                                # Extract MPG
+                                city_mpg_match = re.search(r'(\d+)\s*\n\s*city', pdf_text)
+                                if city_mpg_match:
+                                    data['CityMPG'] = int(city_mpg_match.group(1))
+                                else:
+                                    data['CityMPG'] = 19  # Default
+                                
+                                # Extract pricing
+                                total_match = re.search(r'Total Price[:\s]*\$?([\d,]+\.?\d*)', pdf_text)
+                                if total_match:
+                                    data['TotalMSRP'] = float(total_match.group(1).replace(',', ''))
+                                else:
+                                    data['TotalMSRP'] = None
+                                
+                                return data
+                            
+                            # Extract data from PDF
+                            parsed_data = extract_basic_data(text)
+                            
+                            # Check if VIN already exists
+                            vin_exists = db.vin_exists(vin)
+                            
+                            if vin_exists:
+                                results.append({
+                                    'file': uploaded_file.name,
+                                    'status': 'info',
+                                    'message': f'VIN {vin} already exists in database',
+                                    'vin': vin
+                                })
+                            else:
+                                # Use predicted price based on PDF data or total MSRP
+                                if parsed_data.get('TotalMSRP'):
+                                    price = parsed_data['TotalMSRP']
+                                else:
+                                    # Predict price using our model
+                                    import pandas as pd
+                                    features_df = pd.DataFrame([{
+                                        'Trim': parsed_data.get('Trim', 'Calligraphy'),
+                                        'Drivetrain': parsed_data.get('Drivetrain', 'FWD'),
+                                        'City_MPG': parsed_data.get('CityMPG', 19),
+                                        'Exterior_Color': parsed_data.get('ExteriorColor', 'Creamy White'),
+                                        'Interior_Color': parsed_data.get('InteriorColor', 'Black')
+                                    }])
+                                    price = float(predict_palisade_price(features_df))
+                                
+                                # Add to database
+                                success, message = db.add_vehicle_data(
+                                    vin=vin,
+                                    price=price,
+                                    trim=parsed_data.get('Trim', 'Unknown'),
+                                    drivetrain=parsed_data.get('Drivetrain', 'Unknown'),
+                                    city_mpg=parsed_data.get('CityMPG', 19),
+                                    ext_color=parsed_data.get('ExteriorColor', 'Unknown'),
+                                    int_color=parsed_data.get('InteriorColor', 'Unknown'),
+                                    zip_code='20743',  # Dealer ZIP
+                                    verified=True  # PDF data is verified
+                                )
+                                
+                                if success:
+                                    results.append({
+                                        'file': uploaded_file.name,
+                                        'status': 'success',
+                                        'message': f'Added VIN {vin} to database',
+                                        'vin': vin,
+                                        'data': parsed_data
+                                    })
+                                else:
+                                    results.append({
+                                        'file': uploaded_file.name,
+                                        'status': 'error',
+                                        'message': f'Database error: {message}',
+                                        'vin': vin
+                                    })
+                                
+                        except Exception as e:
+                            results.append({
+                                'file': uploaded_file.name,
+                                'status': 'error',
+                                'message': f'Processing error: {str(e)}',
+                                'vin': None
+                            })
+                    
+                    # Mark files as processed
+                    for uploaded_file in files_to_process:
+                        st.session_state.processed_files.add(uploaded_file.name)
+                    
+                    # Display results
+                    success_count = sum(1 for r in results if r['status'] == 'success')
+                    total_count = len(results)
+                    
+                    if success_count > 0:
+                        st.success(f"✅ Successfully processed {success_count}/{total_count} PDF files")
+                    
+                    # Show detailed results
+                    for result in results:
+                        if result['status'] == 'success':
+                            with st.expander(f"✅ {result['file']} (VIN: {result['vin']})"):
+                                st.success(result['message'])
+                                if 'data' in result:
+                                    data = result['data']
+                                    col1, col2 = st.columns(2)
+                                    with col1:
+                                        st.write(f"**Trim:** {data.get('Trim', 'N/A')}")
+                                        st.write(f"**Drivetrain:** {data.get('Drivetrain', 'N/A')}")
+                                        st.write(f"**City MPG:** {data.get('CityMPG', 'N/A')}")
+                                    with col2:
+                                        st.write(f"**Exterior Color:** {data.get('ExteriorColor', 'N/A')}")
+                                        st.write(f"**Interior Color:** {data.get('InteriorColor', 'N/A')}")
+                                        if data.get('TotalMSRP'):
+                                            st.write(f"**Total MSRP:** ${data['TotalMSRP']:,.0f}")
+                        elif result['status'] == 'info':
+                            with st.expander(f"ℹ️ {result['file']} (VIN: {result['vin']})"):
+                                st.info(result['message'])
+                        else:
+                            with st.expander(f"❌ {result['file']}"):
+                                st.error(result['message'])
+            else:
+                st.info("All uploaded files have already been processed in this session.")
+        
+        # Clear processed files button
+        if 'processed_files' in st.session_state and st.session_state.processed_files:
+            if st.button("🗑️ Clear Processed Files List"):
+                st.session_state.processed_files = set()
+                st.rerun()
     
     with tab2:
         st.subheader("⚙️ System Tools")
