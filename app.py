@@ -305,48 +305,11 @@ if st.button("Predict Price", type="primary"):
                 # Use loaded model
                 predicted_price = model.predict(features)[0]
             
-            # Handle VIN submission and model improvement
-            if DATABASE_AVAILABLE and vin_input and contribute_data:
-                # Validate and add data
-                success, message = db.add_vehicle_data(
-                    vin=vin_input.strip().upper(),
-                    price=asking_price,
-                    trim=trim_level,
-                    drivetrain=drivetrain,
-                    city_mpg=city_mpg,
-                    ext_color=ext_color,
-                    int_color=int_color,
-                    verified=False  # Requires manual verification
-                )
-                
-                if success:
-                    st.success(f"✅ {message} Thank you for contributing to our model!")
-                    
-                    # Check if model should be retrained
-                    trainer = PalisadeModelTrainer()
-                    should_retrain, retrain_message = trainer.should_retrain(new_submissions_threshold=2)
-                    
-                    if should_retrain:
-                        with st.spinner("🔄 Improving model with new data..."):
-                            retrain_success, retrain_result = trainer.retrain_model()
-                            if retrain_success:
-                                st.info(f"🎯 Model improved! {retrain_result}")
-                                # Clear cache to reload new model
-                                st.cache_resource.clear()
-                            else:
-                                st.warning(f"⚠️ Model update deferred: {retrain_result}")
-                else:
-                    st.error(f"❌ {message}")
-            elif vin_input and not contribute_data:
-                st.warning("⚠️ Please confirm data accuracy to contribute to model improvement")
-            elif not DATABASE_AVAILABLE and vin_input:
-                st.info("ℹ️ VIN submission not available in this deployment")
-            
             # Calculate price difference
             price_diff = asking_price - predicted_price
             price_diff_pct = (price_diff / predicted_price) * 100
             
-            # Display results
+            # Display results FIRST - this is the primary purpose
             st.subheader("Price Analysis Results")
             
             col1, col2, col3 = st.columns(3)
@@ -397,6 +360,55 @@ if st.button("Predict Price", type="primary"):
             )
             
             st.plotly_chart(fig, use_container_width=True)
+            
+            # THEN handle VIN submission as secondary information
+            if DATABASE_AVAILABLE and vin_input and contribute_data:
+                # Check for duplicate VIN first
+                vin_cleaned = vin_input.strip().upper()
+                is_valid_vin, vin_message = db.validate_vin(vin_cleaned)
+                
+                if is_valid_vin and db.vin_exists(vin_cleaned):
+                    # Vehicle already exists - show informational message
+                    st.info("ℹ️ **Vehicle Recognition**: This VIN is already in our database, which helped ensure an accurate prediction! No need to re-submit this vehicle data.")
+                elif is_valid_vin:
+                    # New vehicle - attempt to add
+                    success, message = db.add_vehicle_data(
+                        vin=vin_cleaned,
+                        price=asking_price,
+                        trim=trim_level,
+                        drivetrain=drivetrain,
+                        city_mpg=city_mpg,
+                        ext_color=ext_color,
+                        int_color=int_color,
+                        verified=False  # Requires manual verification
+                    )
+                    
+                    if success:
+                        st.success(f"✅ {message} Thank you for contributing to our model!")
+                        
+                        # Check if model should be retrained
+                        trainer = PalisadeModelTrainer()
+                        should_retrain, retrain_message = trainer.should_retrain(new_submissions_threshold=2)
+                        
+                        if should_retrain:
+                            with st.spinner("🔄 Improving model with new data..."):
+                                retrain_success, retrain_result = trainer.retrain_model()
+                                if retrain_success:
+                                    st.info(f"🎯 Model improved! {retrain_result}")
+                                    # Clear cache to reload new model
+                                    st.cache_resource.clear()
+                                else:
+                                    st.warning(f"⚠️ Model update deferred: {retrain_result}")
+                    else:
+                        st.error(f"❌ {message}")
+                else:
+                    # Invalid VIN
+                    st.error(f"❌ Invalid VIN: {vin_message}")
+            elif vin_input and not contribute_data:
+                st.warning("⚠️ Please confirm data accuracy to contribute to model improvement")
+            elif not DATABASE_AVAILABLE and vin_input:
+                st.info("ℹ️ VIN submission not available in this deployment")
+                
             
         except Exception as e:
             st.error(f"Error making prediction: {e}")
