@@ -708,8 +708,36 @@ if DATABASE_AVAILABLE and st.session_state.get('show_admin', False):
         
         # Show recent submissions
         st.subheader("Recent Vehicle Submissions")
-        recent_data = db.get_all_data().head(10)
-        st.dataframe(recent_data)
+        all_data = db.get_all_data()
+        if not all_data.empty:
+            # Show last 10 submissions with enhanced display
+            display_data = all_data.head(10)[['vin', 'trim', 'drivetrain', 'price', 'ext_color', 'zip_code', 'verified', 'submission_date']]
+            display_data.columns = ['VIN', 'Trim', 'Drivetrain', 'Price ($)', 'Color', 'ZIP', 'Verified', 'Submitted']
+            st.dataframe(display_data, use_container_width=True)
+        else:
+            st.info("No vehicle submissions yet. Use the main prediction tool or upload window sticker PDFs to start building the database!")
+        
+        # Show enhanced data overview
+        enhanced_data = db.get_enhanced_features()
+        if not enhanced_data.empty:
+            st.subheader("Enhanced Vehicle Data")
+            st.write(f"📄 {len(enhanced_data)} vehicles with detailed window sticker data")
+            
+            # Show sample of enhanced data
+            enhanced_display = enhanced_data.head(5)[['vin', 'seats', 'base_msrp', 'total_msrp', 'scrape_date']]
+            enhanced_display.columns = ['VIN', 'Seats', 'Base MSRP', 'Total MSRP', 'Enhanced Date']
+            st.dataframe(enhanced_display, use_container_width=True)
+        
+        # Show options and standard features data
+        options_data = db.get_vehicle_options()
+        if not options_data.empty:
+            st.subheader("Vehicle Options Data")
+            st.write(f"🔧 {len(options_data)} vehicles with normalized option data")
+            
+        standard_features_data = db.get_standard_features()
+        if not standard_features_data.empty:
+            st.subheader("Standard Features Data")
+            st.write(f"⭐ {len(standard_features_data)} vehicles with standard feature data")
     
     with tab2:
         st.subheader("🎯 Window Sticker Data Enhancement")
@@ -1190,17 +1218,21 @@ if DATABASE_AVAILABLE and st.session_state.get('show_admin', False):
                                 
                                 predicted_price = float(predict_palisade_price(features_for_prediction))
                                 
-                                basic_success, basic_message = db.add_vehicle_data(
-                                    vin=vin,
-                                    price=predicted_price,
-                                    trim=parsed_data.get('Trim', 'Unknown'),
-                                    drivetrain=parsed_data.get('Drivetrain', 'Unknown'),
-                                    city_mpg=parsed_data.get('CityMPG', 19),  # From PDF or default
-                                    ext_color=parsed_data.get('ExteriorColor', 'Unknown'),
-                                    int_color=parsed_data.get('InteriorColor', 'Unknown'),
-                                    zip_code='20743',  # From dealer address in PDF
-                                    verified=True  # PDF data is verified
-                                )
+                                # Add basic vehicle data if not exists
+                                if not db.vin_exists(vin):
+                                    basic_success, basic_message = db.add_vehicle_data(
+                                        vin=vin,
+                                        price=predicted_price,
+                                        trim=parsed_data.get('Trim', 'Unknown'),
+                                        drivetrain=parsed_data.get('Drivetrain', 'Unknown'),
+                                        city_mpg=parsed_data.get('CityMPG', 19),  # From PDF or default
+                                        ext_color=parsed_data.get('ExteriorColor', 'Unknown'),
+                                        int_color=parsed_data.get('InteriorColor', 'Unknown'),
+                                        zip_code='20743',  # From dealer address in PDF
+                                        verified=True  # PDF data is verified
+                                    )
+                                else:
+                                    basic_success, basic_message = True, "VIN already exists in vehicle_data"
                             
                             # Store enhanced features
                             success, message = db.add_enhanced_features(
@@ -1233,10 +1265,19 @@ if DATABASE_AVAILABLE and st.session_state.get('show_admin', False):
                             
                             if success:
                                 action = "Enhanced existing VIN" if vin_exists else "Added new VIN"
+                                status_details = []
+                                if basic_success:
+                                    status_details.append(f"Vehicle data: {basic_message}")
+                                if hasattr(sticker_data, 'NormalizedOptions') and sticker_data.NormalizedOptions:
+                                    status_details.append(f"Options: {len(sticker_data.NormalizedOptions)} normalized")
+                                if hasattr(sticker_data, 'StandardFeatures') and sticker_data.StandardFeatures:
+                                    status_details.append(f"Features: {len(sticker_data.StandardFeatures)} standard")
+                                
                                 results.append({
                                     'file': uploaded_file.name,
                                     'status': 'success',
                                     'message': f"{action}: {message}",
+                                    'details': "; ".join(status_details) if status_details else "Enhanced features only",
                                     'vin': vin,
                                     'data': sticker_data
                                 })
