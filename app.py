@@ -223,8 +223,16 @@ if DATABASE_AVAILABLE and db:
         st.metric("Verified Records", stats['verified_records'])
         st.metric("Recent Submissions", stats['recent_submissions'])
         if stats['total_records'] > 0:
-            st.metric("Avg Price", f"${stats['avg_price']:,.0f}")
-            st.caption(f"Range: ${stats['min_price']:,.0f} - ${stats['max_price']:,.0f}")
+            try:
+                avg_price = float(stats['avg_price']) if stats['avg_price'] else 0
+                min_price = float(stats['min_price']) if stats['min_price'] else 0
+                max_price = float(stats['max_price']) if stats['max_price'] else 0
+                
+                st.metric("Avg Price", f"${avg_price:,.0f}")
+                st.caption(f"Range: ${min_price:,.0f} - ${max_price:,.0f}")
+            except (ValueError, TypeError) as e:
+                st.metric("Avg Price", "Data Error")
+                st.caption("Price data needs to be refreshed")
     
     # Model improvement analytics
     with st.sidebar.expander("📈 Model Analytics"):
@@ -1016,7 +1024,7 @@ if DATABASE_AVAILABLE and st.session_state.get('show_admin', False):
                                     'Interior_Color': parsed_data.get('InteriorColor', 'Black')
                                 }])
                                 
-                                predicted_price = predict_palisade_price(features_for_prediction)
+                                predicted_price = float(predict_palisade_price(features_for_prediction))
                                 
                                 basic_success, basic_message = db.add_vehicle_data(
                                     vin=vin,
