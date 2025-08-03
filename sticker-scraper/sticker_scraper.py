@@ -147,43 +147,89 @@ def fetch_sticker_pdf_browser(vin: str, timeout: int = 30) -> bytes:
         # Wait a bit to let any JS load
         time.sleep(2)
         
-        # Check if we got a PDF response by examining the content type or page
+        # Multiple methods to detect and retrieve PDF content
         page_source = driver.page_source.lower()
+        current_url = driver.current_url
         
-        # If the page contains PDF content or redirects to PDF
-        if "pdf" in page_source or driver.current_url.endswith('.pdf'):
-            # Get the PDF content - this is tricky with Selenium
-            # We'll use requests with the session cookies from Selenium
+        # Method 1: Direct PDF URL
+        if current_url.endswith('.pdf') or 'pdf' in current_url:
+            # Browser navigated directly to PDF, use requests with cookies
             cookies = driver.get_cookies()
-            
-            # Create a requests session with the browser cookies
             session = requests.Session()
             for cookie in cookies:
                 session.cookies.set(cookie['name'], cookie['value'])
             
-            # Add the same headers the browser would use
             headers = {
-                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                 "Accept": "application/pdf,*/*",
                 "Referer": url
             }
             
-            # Now try to get the PDF with the authenticated session
-            response = session.get(url, headers=headers, timeout=timeout)
+            response = session.get(current_url, headers=headers, timeout=timeout)
             response.raise_for_status()
             
             if response.content.startswith(b"%PDF"):
                 return response.content
             else:
-                raise ValueError(f"Response for VIN {vin} was not a PDF")
+                raise ValueError(f"Direct PDF URL didn't return valid PDF for VIN {vin}")
+        
+        # Method 2: Look for PDF links or embedded content
+        elif "pdf" in page_source or "application/pdf" in page_source:
+            # Try the original URL with authenticated session
+            cookies = driver.get_cookies()
+            session = requests.Session()
+            for cookie in cookies:
+                session.cookies.set(cookie['name'], cookie['value'])
+            
+            headers = {
+                "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Accept": "application/pdf,*/*",
+                "Referer": current_url
+            }
+            
+            response = session.get(url, headers=headers, timeout=timeout)
+            response.raise_for_status()
+            
+            if response.content.startswith(b"%PDF"):
+                return response.content
+        
+        # Method 3: Check if we can get PDF directly from original URL regardless of page content
+        try:
+            cookies = driver.get_cookies()
+            session = requests.Session()
+            for cookie in cookies:
+                session.cookies.set(cookie['name'], cookie['value'])
+            
+            headers = {
+                "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Accept": "application/pdf,*/*",
+                "Referer": current_url
+            }
+            
+            response = session.get(url, headers=headers, timeout=timeout)
+            response.raise_for_status()
+            
+            if response.content.startswith(b"%PDF"):
+                return response.content
+        except Exception:
+            pass  # Will check for error conditions below
+        
+        # Method 4: Check for common error conditions
+        if "403" in page_source or "forbidden" in page_source:
+            raise requests.exceptions.HTTPError(f"Access denied for VIN {vin} even with browser automation")
+        elif "not found" in page_source or "404" in page_source:
+            raise requests.exceptions.HTTPError(f"Window sticker not found for VIN {vin}")
+        elif "invalid" in page_source and "vin" in page_source:
+            raise requests.exceptions.HTTPError(f"Invalid VIN {vin} according to dealership")
         else:
-            # Check for error messages
-            if "403" in page_source or "forbidden" in page_source:
-                raise requests.exceptions.HTTPError(f"Access denied for VIN {vin} even with browser automation")
-            elif "not found" in page_source or "404" in page_source:
-                raise requests.exceptions.HTTPError(f"Window sticker not found for VIN {vin}")
+            # Provide more detailed error info for debugging
+            error_details = f"Unexpected page content for VIN {vin}. "
+            error_details += f"Current URL: {current_url[:100]}... "
+            if len(page_source) > 100:
+                error_details += f"Page contains: {page_source[:200]}..."
             else:
-                raise ValueError(f"Unexpected page content for VIN {vin}")
+                error_details += f"Page source: {page_source}"
+            raise ValueError(error_details)
                 
     finally:
         if driver:
