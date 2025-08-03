@@ -12,6 +12,7 @@ import os
 try:
     from database import PalisadeDatabase, initialize_database
     from model_trainer import PalisadeModelTrainer, load_enhanced_model
+    from model_analytics import ModelAnalytics
     DATABASE_AVAILABLE = True
 except ImportError:
     DATABASE_AVAILABLE = False
@@ -213,6 +214,17 @@ if DATABASE_AVAILABLE and db:
         if stats['total_records'] > 0:
             st.metric("Avg Price", f"${stats['avg_price']:,.0f}")
             st.caption(f"Range: ${stats['min_price']:,.0f} - ${stats['max_price']:,.0f}")
+    
+    # Model improvement analytics
+    with st.sidebar.expander("📈 Model Analytics"):
+        analytics = ModelAnalytics()
+        diversity = analytics.calculate_diversity_score()
+        
+        st.metric("Data Diversity Score", f"{diversity['overall_diversity_score']:.1%}")
+        st.progress(diversity['overall_diversity_score'])
+        
+        if st.button("📊 View Full Analytics"):
+            st.session_state.show_analytics = True
 
 # Model features based on your trained model
 col1, col2 = st.columns(2)
@@ -472,6 +484,78 @@ with st.expander("ℹ️ How to use this app"):
     - 💰 **Good Deal**: More than 5% below predicted value
     """)
 
+# Analytics Dashboard
+if DATABASE_AVAILABLE and st.session_state.get('show_analytics', False):
+    st.header("📈 Model Improvement Analytics")
+    
+    analytics = ModelAnalytics()
+    dashboard = analytics.create_improvement_dashboard()
+    
+    # Show key metrics
+    col1, col2, col3, col4 = st.columns(4)
+    metrics = dashboard['metrics']
+    
+    with col1:
+        st.metric("Total Records", metrics['total_records'])
+    with col2:
+        st.metric("Model Versions", metrics['model_versions'])
+    with col3:
+        diversity_score = metrics['diversity_score']['overall_diversity_score']
+        st.metric("Data Diversity", f"{diversity_score:.1%}")
+    with col4:
+        if metrics['current_accuracy']:
+            current_error = metrics['current_accuracy']['accuracy']['avg_percent_error']
+            st.metric("Current Error", f"{current_error:.1f}%")
+        else:
+            st.metric("Current Error", "N/A")
+    
+    # Show charts
+    charts = dashboard['charts']
+    
+    if 'accuracy_trend' in charts:
+        st.subheader("🎯 Model Accuracy Over Time")
+        st.plotly_chart(charts['accuracy_trend'], use_container_width=True)
+    
+    if 'data_growth' in charts:
+        st.subheader("📈 Training Data Growth")
+        st.plotly_chart(charts['data_growth'], use_container_width=True)
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if 'feature_diversity' in charts:
+            st.subheader("🎨 Feature Diversity")
+            st.plotly_chart(charts['feature_diversity'], use_container_width=True)
+    
+    with col2:
+        if 'price_distribution' in charts:
+            st.subheader("💰 Price Distribution")
+            st.plotly_chart(charts['price_distribution'], use_container_width=True)
+    
+    # Show improvement recommendations
+    report = analytics.generate_improvement_report()
+    if report['recommendations']:
+        st.subheader("💡 Improvement Recommendations")
+        for rec in report['recommendations']:
+            st.info(f"• {rec}")
+    
+    # Diversity breakdown
+    diversity_metrics = metrics['diversity_score']
+    st.subheader("📊 Diversity Breakdown")
+    diversity_col1, diversity_col2 = st.columns(2)
+    
+    with diversity_col1:
+        st.metric("Trim Diversity", f"{diversity_metrics['trim_diversity']:.1%}")
+        st.metric("Drivetrain Diversity", f"{diversity_metrics['drivetrain_diversity']:.1%}")
+    
+    with diversity_col2:
+        st.metric("Exterior Color Diversity", f"{diversity_metrics['ext_color_diversity']:.1%}")
+        st.metric("Interior Color Diversity", f"{diversity_metrics['int_color_diversity']:.1%}")
+    
+    if st.button("← Back to Price Predictor"):
+        st.session_state.show_analytics = False
+        st.rerun()
+
 with st.expander("🔧 Model Information"):
     if model is not None:
         st.success("✅ Price prediction model loaded successfully")
@@ -486,6 +570,14 @@ with st.expander("🔧 Model Information"):
         for i, feature in enumerate(features_list, 1):
             st.write(f"{i}. {feature}")
         st.write(f"**Total Features:** {len(features_list)}")
+        
+        # Show current model performance if analytics available
+        if DATABASE_AVAILABLE:
+            analytics = ModelAnalytics()
+            accuracy_analysis = analytics.analyze_prediction_accuracy()
+            if accuracy_analysis:
+                st.write(f"**Current Model Accuracy:** {accuracy_analysis['accuracy']['avg_percent_error']:.1f}% average error")
+                st.write(f"**Training Data Size:** {accuracy_analysis['train_size']} records")
     else:
         st.warning("⚠️ Model not loaded - running in demo mode")
         st.markdown("""
