@@ -554,16 +554,20 @@ if DATABASE_AVAILABLE and st.session_state.get('show_admin', False):
         else:
             st.info("No vehicle submissions yet. Use the main prediction tool or upload window sticker PDFs to start building the database!")
         
-        # Show enhanced data overview
-        enhanced_data = db.get_enhanced_features()
-        if not enhanced_data.empty:
-            st.subheader("Enhanced Vehicle Data")
-            st.write(f"📄 {len(enhanced_data)} vehicles with detailed window sticker data")
-            
-            # Show sample of enhanced data
-            enhanced_display = enhanced_data.head(5)[['vin', 'seats', 'base_msrp', 'total_msrp', 'scrape_date']]
-            enhanced_display.columns = ['VIN', 'Seats', 'Base MSRP', 'Total MSRP', 'Enhanced Date']
-            st.dataframe(enhanced_display, use_container_width=True)
+        # Show enhanced data overview (if table exists)
+        try:
+            enhanced_data = db.get_enhanced_features()
+            if not enhanced_data.empty:
+                st.subheader("Enhanced Vehicle Data")
+                st.write(f"📄 {len(enhanced_data)} vehicles with detailed window sticker data")
+                
+                # Show sample of enhanced data
+                enhanced_display = enhanced_data.head(5)[['vin', 'seats', 'base_msrp', 'total_msrp', 'scrape_date']]
+                enhanced_display.columns = ['VIN', 'Seats', 'Base MSRP', 'Total MSRP', 'Enhanced Date']
+                st.dataframe(enhanced_display, use_container_width=True)
+        except Exception:
+            # Enhanced features table doesn't exist in production database yet
+            pass
         
         # Show options and standard features data (if methods exist)
         try:
