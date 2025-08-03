@@ -14,10 +14,19 @@ try:
     from database import PalisadeDatabase, initialize_database
     from model_trainer import PalisadeModelTrainer, load_enhanced_model
     from model_analytics import ModelAnalytics
-    from sticker_integration import StickerDataEnhancer
     DATABASE_AVAILABLE = True
+    
+    # Try to import sticker integration
+    try:
+        from sticker_integration import StickerDataEnhancer
+        STICKER_AVAILABLE = True
+    except ImportError as e:
+        print(f"Sticker integration not available: {e}")
+        STICKER_AVAILABLE = False
+        
 except ImportError:
     DATABASE_AVAILABLE = False
+    STICKER_AVAILABLE = False
 
 st.set_page_config(
     page_title="Car Price Predictor",
