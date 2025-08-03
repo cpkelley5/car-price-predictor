@@ -39,6 +39,26 @@ class PalisadeDatabase:
             )
         ''')
         
+        # Create enhanced vehicle features table (from window sticker data)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS enhanced_vehicle_features (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                vin TEXT UNIQUE NOT NULL,
+                seats TEXT,
+                engine TEXT,
+                horsepower TEXT,
+                base_msrp REAL,
+                destination_charge REAL,
+                total_msrp REAL,
+                packages TEXT,
+                options TEXT,
+                sticker_url TEXT,
+                parse_notes TEXT,
+                scrape_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (vin) REFERENCES vehicle_data (vin)
+            )
+        ''')
+        
         # Check if zip_code column exists, add if missing (migration)
         cursor.execute("PRAGMA table_info(vehicle_data)")
         columns = [column[1] for column in cursor.fetchall()]
@@ -179,6 +199,53 @@ class PalisadeDatabase:
             ''', conn)
             df['ZipCode'] = None  # Add empty column for consistency
         
+        conn.close()
+        return df
+    
+    def add_enhanced_features(self, vin, seats=None, engine=None, horsepower=None, 
+                             base_msrp=None, destination_charge=None, total_msrp=None,
+                             packages=None, options=None, sticker_url=None, parse_notes=None):
+        """Add enhanced vehicle features from window sticker data"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT OR REPLACE INTO enhanced_vehicle_features 
+                (vin, seats, engine, horsepower, base_msrp, destination_charge, 
+                 total_msrp, packages, options, sticker_url, parse_notes)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (vin, seats, engine, horsepower, base_msrp, destination_charge,
+                  total_msrp, packages, options, sticker_url, parse_notes))
+            conn.commit()
+            conn.close()
+            return True, "Enhanced features added successfully"
+        except Exception as e:
+            return False, f"Database error: {str(e)}"
+    
+    def get_enhanced_features(self, vin=None):
+        """Get enhanced features data"""
+        conn = sqlite3.connect(self.db_path)
+        if vin:
+            df = pd.read_sql_query('''
+                SELECT * FROM enhanced_vehicle_features WHERE vin = ?
+            ''', conn, params=(vin,))
+        else:
+            df = pd.read_sql_query('''
+                SELECT * FROM enhanced_vehicle_features ORDER BY scrape_date DESC
+            ''', conn)
+        conn.close()
+        return df
+    
+    def get_vins_without_enhanced_data(self):
+        """Get VINs that don't have enhanced feature data yet"""
+        conn = sqlite3.connect(self.db_path)
+        df = pd.read_sql_query('''
+            SELECT vd.vin, vd.trim, vd.price 
+            FROM vehicle_data vd
+            LEFT JOIN enhanced_vehicle_features evf ON vd.vin = evf.vin
+            WHERE evf.vin IS NULL
+            ORDER BY vd.submission_date DESC
+        ''', conn)
         conn.close()
         return df
     

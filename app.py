@@ -7,12 +7,14 @@ import plotly.graph_objects as go
 from datetime import datetime
 import json
 import os
+import hashlib
 
 # Import our database and model training modules
 try:
     from database import PalisadeDatabase, initialize_database
     from model_trainer import PalisadeModelTrainer, load_enhanced_model
     from model_analytics import ModelAnalytics
+    from sticker_integration import StickerDataEnhancer
     DATABASE_AVAILABLE = True
 except ImportError:
     DATABASE_AVAILABLE = False
@@ -608,3 +610,217 @@ with st.expander("🔧 Model Information"):
         3. Restart the app
         4. The model should load automatically
         """)
+
+# Admin Interface
+st.sidebar.markdown("---")
+admin_expander = st.sidebar.expander("🔧 Admin Tools")
+with admin_expander:
+    admin_password = st.text_input("Admin Password", type="password", key="admin_pass")
+    
+    # Simple password check (in production, use proper authentication)
+    admin_hash = "5994471abb01112afcc18159f6cc74b4f511b99806da59b3caf5a9c173cacfc5"  # "admin"
+    
+    if admin_password and hashlib.sha256(admin_password.encode()).hexdigest() == admin_hash:
+        if st.button("🔧 Open Admin Dashboard"):
+            st.session_state.show_admin = True
+
+# Admin Dashboard
+if DATABASE_AVAILABLE and st.session_state.get('show_admin', False):
+    st.header("🔧 Admin Dashboard")
+    
+    # Check if user is authenticated
+    if not (admin_password and hashlib.sha256(admin_password.encode()).hexdigest() == admin_hash):
+        st.error("⚠️ Admin access required")
+        st.session_state.show_admin = False
+        st.rerun()
+    
+    tab1, tab2, tab3, tab4 = st.tabs(["📊 Data Overview", "🎯 Window Sticker Scraper", "📈 Enhanced Analytics", "⚙️ System Tools"])
+    
+    with tab1:
+        st.subheader("📊 Database Overview")
+        
+        # Basic stats
+        stats = db.get_data_stats()
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric("Total VINs", stats['total_records'])
+        with col2:
+            st.metric("Verified Records", stats['verified_records'])
+        with col3:
+            st.metric("Recent Submissions", stats['recent_submissions'])
+        with col4:
+            if stats['total_records'] > 0:
+                st.metric("Avg Price", f"${stats['avg_price']:,.0f}")
+        
+        # Show recent submissions
+        st.subheader("Recent Vehicle Submissions")
+        recent_data = db.get_all_data().head(10)
+        st.dataframe(recent_data)
+    
+    with tab2:
+        st.subheader("🎯 Window Sticker Data Enhancement")
+        
+        # Initialize enhancer
+        enhancer = StickerDataEnhancer()
+        
+        # Check scraper availability
+        available, message = enhancer.check_scraper_availability()
+        if available:
+            st.success(f"✅ {message}")
+        else:
+            st.error(f"❌ {message}")
+            st.info("To enable scraper: `pip install requests pdfplumber`")
+        
+        # Enhancement stats
+        enhancement_stats = enhancer.get_enhancement_stats()
+        
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("Total VINs", enhancement_stats['total_vins'])
+        with col2:
+            st.metric("Enhanced VINs", enhancement_stats['enhanced_vins'])
+        with col3:
+            st.metric("Pending VINs", enhancement_stats['pending_vins'])
+        with col4:
+            st.metric("Enhancement Rate", f"{enhancement_stats['enhancement_rate']:.1%}")
+        
+        # Show candidates for enhancement
+        candidates = enhancer.get_enhancement_candidates()
+        if not candidates.empty:
+            st.subheader("VINs Ready for Enhancement")
+            st.dataframe(candidates)
+            
+            if available and st.button("🚀 Enhance All VINs", type="primary"):
+                with st.spinner("Enhancing VINs with window sticker data..."):
+                    vins_to_enhance = candidates['vin'].tolist()
+                    results = enhancer.enhance_multiple_vins(vins_to_enhance[:5])  # Limit to 5 for demo
+                    
+                    success_count = sum(1 for success, _ in results.values() if success)
+                    st.success(f"✅ Enhanced {success_count}/{len(results)} VINs")
+                    
+                    # Show results
+                    for vin, (success, message) in results.items():
+                        if success:
+                            st.info(f"✅ {vin}: {message}")
+                        else:
+                            st.warning(f"⚠️ {vin}: {message}")
+                    
+                    st.rerun()
+        else:
+            st.info("🎉 All VINs have been enhanced!")
+        
+        # Single VIN enhancement
+        st.subheader("Enhance Single VIN")
+        single_vin = st.text_input("VIN to enhance", placeholder="KM8RMES2XTU030770")
+        if st.button("Enhance VIN") and single_vin and available:
+            with st.spinner(f"Enhancing VIN {single_vin}..."):
+                success, message, sticker_data = enhancer.enhance_single_vin(single_vin)
+                if success:
+                    st.success(message)
+                    if sticker_data:
+                        st.json({
+                            "Trim": sticker_data.Trim,
+                            "Seats": sticker_data.Seats,
+                            "Engine": sticker_data.Engine,
+                            "Base MSRP": sticker_data.BaseMSRP,
+                            "Total MSRP": sticker_data.TotalMSRP,
+                            "Packages": sticker_data.Packages,
+                            "Parse Notes": sticker_data.ParseNotes
+                        })
+                else:
+                    st.error(message)
+    
+    with tab3:
+        st.subheader("📈 Enhanced Data Analytics")
+        
+        # Show enhanced data summary
+        enhanced_summary = enhancer.get_enhanced_summary()
+        if not enhanced_summary.empty:
+            st.subheader("Enhanced Features Summary")
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                has_packages = enhanced_summary['has_packages'].sum()
+                st.metric("VINs with Packages", f"{has_packages}/{len(enhanced_summary)}")
+            with col2:
+                has_options = enhanced_summary['has_options'].sum()
+                st.metric("VINs with Options", f"{has_options}/{len(enhanced_summary)}")
+            with col3:
+                parse_success = enhanced_summary['parse_success'].sum()
+                st.metric("Successful Parses", f"{parse_success}/{len(enhanced_summary)}")
+            
+            # Show sample enhanced data
+            st.subheader("Sample Enhanced Data")
+            display_cols = ['vin', 'seats', 'engine', 'base_msrp', 'total_msrp', 'packages', 'parse_notes']
+            available_cols = [col for col in display_cols if col in enhanced_summary.columns]
+            st.dataframe(enhanced_summary[available_cols].head(10))
+            
+            # MSRP vs Price comparison
+            if 'total_msrp' in enhanced_summary.columns:
+                # Join with vehicle data to get actual prices
+                vehicle_data = db.get_all_data()
+                merged = enhanced_summary.merge(vehicle_data[['vin', 'price']], on='vin', how='inner')
+                
+                if not merged.empty and 'total_msrp' in merged.columns:
+                    merged['msrp_vs_price'] = merged['total_msrp'] - merged['price']
+                    
+                    fig = px.scatter(
+                        merged, 
+                        x='total_msrp', 
+                        y='price',
+                        title="MSRP vs Actual Price",
+                        labels={'total_msrp': 'Total MSRP ($)', 'price': 'Actual Price ($)'}
+                    )
+                    # Add diagonal line for reference
+                    min_val = min(merged['total_msrp'].min(), merged['price'].min())
+                    max_val = max(merged['total_msrp'].max(), merged['price'].max())
+                    fig.add_trace(go.Scatter(
+                        x=[min_val, max_val], 
+                        y=[min_val, max_val],
+                        mode='lines',
+                        name='MSRP = Price',
+                        line=dict(dash='dash', color='red')
+                    ))
+                    st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("No enhanced data available yet. Use the Window Sticker Scraper to enhance VINs.")
+    
+    with tab4:
+        st.subheader("⚙️ System Tools")
+        
+        # Database operations
+        if st.button("🔄 Refresh Data Stats"):
+            st.cache_data.clear()
+            st.success("Cache cleared and data refreshed")
+        
+        if st.button("📊 Retrain Model"):
+            trainer = PalisadeModelTrainer()
+            should_retrain, message = trainer.should_retrain(new_submissions_threshold=1)
+            if should_retrain:
+                success, result = trainer.retrain_model()
+                if success:
+                    st.success(f"✅ {result}")
+                else:
+                    st.warning(f"⚠️ {result}")
+            else:
+                st.info(f"ℹ️ {message}")
+        
+        # Export options
+        st.subheader("📤 Data Export")
+        if st.button("Download Enhanced Dataset"):
+            enhanced_data = enhancer.get_enhanced_summary()
+            if not enhanced_data.empty:
+                csv = enhanced_data.to_csv(index=False)
+                st.download_button(
+                    label="📥 Download Enhanced Data CSV",
+                    data=csv,
+                    file_name=f"enhanced_vehicle_data_{datetime.now().strftime('%Y%m%d')}.csv",
+                    mime="text/csv"
+                )
+            else:
+                st.warning("No enhanced data to export")
+    
+    if st.button("← Back to Price Predictor"):
+        st.session_state.show_admin = False
+        st.rerun()
