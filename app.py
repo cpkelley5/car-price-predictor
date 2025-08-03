@@ -802,10 +802,47 @@ if DATABASE_AVAILABLE and st.session_state.get('show_admin', False):
         )
         
         if uploaded_files:
+            # Use session state to prevent infinite reprocessing by VIN (not filename)
+            if 'processed_vins' not in st.session_state:
+                st.session_state.processed_vins = set()
+            
+            # Quick VIN extraction to check if we should process each file
+            files_to_process = []
+            for uploaded_file in uploaded_files:
+                # Quick peek at file content to extract VIN
+                try:
+                    pdf_bytes = uploaded_file.read()
+                    # Reset file pointer for later processing
+                    uploaded_file.seek(0)
+                    
+                    # Quick VIN extraction (simplified)
+                    import sys
+                    import os
+                    sys.path.append(os.path.join(os.path.dirname(__file__), 'sticker-scraper'))
+                    try:
+                        from sticker_scraper import pdf_to_text
+                        text = pdf_to_text(pdf_bytes)
+                        import re
+                        vin_match = re.search(r'VIN:\s*([A-HJ-NPR-Z0-9]{17})', text)
+                        if not vin_match:
+                            vin_match = re.search(r'\b([A-HJ-NPR-Z0-9]{17})\b', text)
+                        
+                        if vin_match:
+                            vin = vin_match.group(1)
+                            if vin not in st.session_state.processed_vins:
+                                files_to_process.append((uploaded_file, vin))
+                    except ImportError:
+                        # If we can't extract VIN, process anyway
+                        files_to_process.append((uploaded_file, None))
+                except Exception:
+                    # If we can't read file, process anyway
+                    files_to_process.append((uploaded_file, None))
+            
+            if files_to_process:
                 with st.spinner("Processing PDF files..."):
                     results = []
                     
-                    for uploaded_file in uploaded_files:
+                    for uploaded_file, extracted_vin in files_to_process:
                         try:
                             # Read PDF content
                             pdf_bytes = uploaded_file.read()
@@ -814,7 +851,16 @@ if DATABASE_AVAILABLE and st.session_state.get('show_admin', False):
                             import sys
                             import os
                             sys.path.append(os.path.join(os.path.dirname(__file__), 'sticker-scraper'))
-                            from sticker_scraper import pdf_to_text, parse_sticker_text
+                            try:
+                                from sticker_scraper import pdf_to_text, StickerData
+                            except ImportError:
+                                results.append({
+                                    'file': uploaded_file.name,
+                                    'status': 'error',
+                                    'message': 'PDF parsing module not available',
+                                    'vin': None
+                                })
+                                continue
                             text = pdf_to_text(pdf_bytes)
                             
                             if not text or len(text.strip()) < 50:
@@ -913,8 +959,7 @@ if DATABASE_AVAILABLE and st.session_state.get('show_admin', False):
                             # Use enhanced parsing
                             parsed_data = parse_hyundai_sticker(vin, text)
                             
-                            # Convert to StickerData format for compatibility
-                            from sticker_scraper import StickerData
+                            # Convert to StickerData format for compatibility (already imported above)
                             sticker_data = StickerData(
                                 VIN=parsed_data.get('VIN'),
                                 Trim=parsed_data.get('Trim'),
@@ -975,6 +1020,11 @@ if DATABASE_AVAILABLE and st.session_state.get('show_admin', False):
                                 'vin': None
                             })
                     
+                    # Mark VINs as processed
+                    for result in results:
+                        if result['status'] == 'success' and result['vin']:
+                            st.session_state.processed_vins.add(result['vin'])
+                    
                     # Display results
                     success_count = sum(1 for r in results if r['status'] == 'success')
                     st.success(f"✅ Successfully processed {success_count}/{len(results)} PDF files")
@@ -1001,8 +1051,42 @@ if DATABASE_AVAILABLE and st.session_state.get('show_admin', False):
                         else:
                             with st.expander(f"❌ {result['file']}"):
                                 st.error(result['message'])
-                    
-                    st.rerun()
+        
+        # Add a clear processed VINs button
+        if 'processed_vins' in st.session_state and st.session_state.processed_vins:
+            if st.button("🗑️ Clear Processed VINs List"):
+                st.session_state.processed_vins = set()
+                st.rerun()
+        
+        # Verification section
+        st.subheader("📊 Recent Database Activity")
+        if DATABASE_AVAILABLE:
+            # Show recent enhanced entries
+            try:
+                enhanced_df = db.get_enhanced_features()
+                if not enhanced_df.empty:
+                    # Show most recent entries
+                    recent_entries = enhanced_df.head(5)
+                    st.write("**Most Recent Enhanced VINs:**")
+                    for _, row in recent_entries.iterrows():
+                        with st.expander(f"VIN: {row['vin']} ({row.get('sticker_url', 'Unknown source')})"):
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                st.write(f"**Enhanced At:** {row.get('created_at', 'Unknown')}")
+                                if 'seats' in row and row['seats']: st.write(f"**Seats:** {row['seats']}")
+                                if 'engine' in row and row['engine']: st.write(f"**Engine:** {row['engine']}")
+                                if 'horsepower' in row and row['horsepower']: st.write(f"**Horsepower:** {row['horsepower']}")
+                            with col2:
+                                if 'base_msrp' in row and row['base_msrp']: st.write(f"**Base MSRP:** ${row['base_msrp']:,.0f}")
+                                if 'destination_charge' in row and row['destination_charge']: st.write(f"**Destination:** ${row['destination_charge']:,.0f}")
+                                if 'total_msrp' in row and row['total_msrp']: st.write(f"**Total MSRP:** ${row['total_msrp']:,.0f}")
+                            if 'packages' in row and row['packages']: st.write(f"**Packages:** {row['packages']}")
+                            if 'options' in row and row['options']: st.write(f"**Options:** {row['options']}")
+                            if 'parse_notes' in row and row['parse_notes']: st.write(f"**Notes:** {row['parse_notes']}")
+                else:
+                    st.info("No enhanced VIN data found yet. Upload some PDFs to get started!")
+            except Exception as e:
+                st.error(f"Error retrieving enhanced data: {e}")
         
         st.divider()
         
