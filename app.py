@@ -1006,8 +1006,21 @@ if DATABASE_AVAILABLE and st.session_state.get('show_admin', False):
                             # If VIN doesn't exist, create a basic entry first
                             if not vin_exists:
                                 # Create a basic submission entry so it shows up in total count
-                                basic_success, basic_message = db.add_submission(
+                                # Need to estimate price for the main entry using our prediction model
+                                import pandas as pd
+                                features_for_prediction = pd.DataFrame([{
+                                    'Trim': parsed_data.get('Trim', 'Calligraphy'),
+                                    'Drivetrain': parsed_data.get('Drivetrain', 'FWD'),
+                                    'City_MPG': parsed_data.get('CityMPG', 19),
+                                    'Exterior_Color': parsed_data.get('ExteriorColor', 'Creamy White'),
+                                    'Interior_Color': parsed_data.get('InteriorColor', 'Black')
+                                }])
+                                
+                                predicted_price = predict_palisade_price(features_for_prediction)
+                                
+                                basic_success, basic_message = db.add_vehicle_data(
                                     vin=vin,
+                                    price=predicted_price,
                                     trim=parsed_data.get('Trim', 'Unknown'),
                                     drivetrain=parsed_data.get('Drivetrain', 'Unknown'),
                                     city_mpg=parsed_data.get('CityMPG', 19),  # From PDF or default
