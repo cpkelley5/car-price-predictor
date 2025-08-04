@@ -205,11 +205,26 @@ class PalisadeDatabase:
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-            cursor.execute('''
-                INSERT INTO vehicle_data 
-                (vin, price, trim, drivetrain, city_mpg, ext_color, int_color, zip_code, verified)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (vin, price, trim, drivetrain, city_mpg, ext_color, int_color, zip_code, verified))
+            
+            # Check if zip_code column exists
+            cursor.execute("PRAGMA table_info(vehicle_data)")
+            columns = [column[1] for column in cursor.fetchall()]
+            
+            if 'zip_code' in columns:
+                # Use full insert with zip_code
+                cursor.execute('''
+                    INSERT INTO vehicle_data 
+                    (vin, price, trim, drivetrain, city_mpg, ext_color, int_color, zip_code, verified)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (vin, price, trim, drivetrain, city_mpg, ext_color, int_color, zip_code, verified))
+            else:
+                # Use insert without zip_code for older schema
+                cursor.execute('''
+                    INSERT INTO vehicle_data 
+                    (vin, price, trim, drivetrain, city_mpg, ext_color, int_color, verified)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (vin, price, trim, drivetrain, city_mpg, ext_color, int_color, verified))
+            
             conn.commit()
             conn.close()
             return True, "Vehicle data added successfully"
