@@ -413,17 +413,41 @@ class PalisadeDatabase:
     
     def get_vehicle_options(self, vin=None):
         """Get normalized vehicle options data"""
-        conn = sqlite3.connect(self.db_path)
-        if vin:
-            df = pd.read_sql_query('''
-                SELECT * FROM vehicle_options WHERE vin = ?
-            ''', conn, params=(vin,))
-        else:
-            df = pd.read_sql_query('''
-                SELECT * FROM vehicle_options ORDER BY created_date DESC
-            ''', conn)
-        conn.close()
-        return df
+        conn = None
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # Check if table exists first
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='vehicle_options'")
+            table_exists = cursor.fetchone() is not None
+            
+            if not table_exists:
+                # Table doesn't exist, return empty DataFrame
+                conn.close()
+                return pd.DataFrame()
+            
+            # Table exists, proceed with query
+            if vin:
+                df = pd.read_sql_query('''
+                    SELECT * FROM vehicle_options WHERE vin = ?
+                ''', conn, params=(vin,))
+            else:
+                df = pd.read_sql_query('''
+                    SELECT * FROM vehicle_options ORDER BY created_date DESC
+                ''', conn)
+            
+            conn.close()
+            return df
+            
+        except Exception as e:
+            if conn:
+                try:
+                    conn.close()
+                except:
+                    pass
+            # Return empty DataFrame on any error
+            return pd.DataFrame()
     
     def add_standard_features(self, vin, **features):
         """Add standard features based on trim level"""
@@ -451,17 +475,41 @@ class PalisadeDatabase:
     
     def get_standard_features(self, vin=None):
         """Get standard features data"""
-        conn = sqlite3.connect(self.db_path)
-        if vin:
-            df = pd.read_sql_query('''
-                SELECT * FROM standard_features WHERE vin = ?
-            ''', conn, params=(vin,))
-        else:
-            df = pd.read_sql_query('''
-                SELECT * FROM standard_features ORDER BY created_date DESC
-            ''', conn)
-        conn.close()
-        return df
+        conn = None
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # Check if table exists first
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='standard_features'")
+            table_exists = cursor.fetchone() is not None
+            
+            if not table_exists:
+                # Table doesn't exist, return empty DataFrame
+                conn.close()
+                return pd.DataFrame()
+            
+            # Table exists, proceed with query
+            if vin:
+                df = pd.read_sql_query('''
+                    SELECT * FROM standard_features WHERE vin = ?
+                ''', conn, params=(vin,))
+            else:
+                df = pd.read_sql_query('''
+                    SELECT * FROM standard_features ORDER BY created_date DESC
+                ''', conn)
+            
+            conn.close()
+            return df
+            
+        except Exception as e:
+            if conn:
+                try:
+                    conn.close()
+                except:
+                    pass
+            # Return empty DataFrame on any error
+            return pd.DataFrame()
 
     def get_training_data_with_options(self, verified_only=False):
         """Get training data enhanced with normalized option and standard feature data"""
