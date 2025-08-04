@@ -779,7 +779,7 @@ if DATABASE_AVAILABLE and st.session_state.get('show_admin', False):
                             vin = vin_match.group(1)
                             
                             # Extract basic vehicle data from PDF
-                            def extract_basic_data(pdf_text):
+                            def extract_comprehensive_data(pdf_text):
                                 data = {'VIN': vin}
                                 
                                 # Extract trim
@@ -798,36 +798,329 @@ if DATABASE_AVAILABLE and st.session_state.get('show_admin', False):
                                     data['Drivetrain'] = 'Unknown'
                                 
                                 # Extract colors
-                                ext_color_match = re.search(r'EXTERIOR COLOR[:\s]*([A-Z\s/\-]+)', pdf_text)
-                                if ext_color_match:
-                                    data['ExteriorColor'] = ext_color_match.group(1).strip()
+                                ext_color_patterns = [
+                                    r'EXTERIOR COLOR[:\s]*([A-Z\s/\-]+)',
+                                    r'EXT\.?\s*COLOR[:\s]*([A-Z\s/\-]+)',
+                                    r'PAINT[:\s]*([A-Z\s/\-]+)'
+                                ]
+                                for pattern in ext_color_patterns:
+                                    ext_color_match = re.search(pattern, pdf_text)
+                                    if ext_color_match:
+                                        data['ExteriorColor'] = ext_color_match.group(1).strip()
+                                        break
                                 else:
                                     data['ExteriorColor'] = 'Unknown'
                                 
-                                int_color_match = re.search(r'INTERIOR[/\s]*(?:SEAT\s+)?COLOR[:\s]*([A-Z\s/\-]+)', pdf_text)
-                                if int_color_match:
-                                    data['InteriorColor'] = int_color_match.group(1).strip()
+                                int_color_patterns = [
+                                    r'INTERIOR[/\s]*(?:SEAT\s+)?COLOR[:\s]*([A-Z\s/\-]+)',
+                                    r'INT\.?\s*COLOR[:\s]*([A-Z\s/\-]+)',
+                                    r'SEAT[:\s]*([A-Z\s/\-]+)'
+                                ]
+                                for pattern in int_color_patterns:
+                                    int_color_match = re.search(pattern, pdf_text)
+                                    if int_color_match:
+                                        data['InteriorColor'] = int_color_match.group(1).strip()
+                                        break
                                 else:
                                     data['InteriorColor'] = 'Unknown'
                                 
                                 # Extract MPG
-                                city_mpg_match = re.search(r'(\d+)\s*\n\s*city', pdf_text)
-                                if city_mpg_match:
-                                    data['CityMPG'] = int(city_mpg_match.group(1))
+                                city_mpg_patterns = [
+                                    r'(\d+)\s*\n\s*city',
+                                    r'City\s*MPG[:\s]*(\d+)',
+                                    r'(\d+)\s*city\s*mpg'
+                                ]
+                                for pattern in city_mpg_patterns:
+                                    city_mpg_match = re.search(pattern, pdf_text, re.IGNORECASE)
+                                    if city_mpg_match:
+                                        data['CityMPG'] = int(city_mpg_match.group(1))
+                                        break
                                 else:
                                     data['CityMPG'] = 19  # Default
                                 
-                                # Extract pricing
-                                total_match = re.search(r'Total Price[:\s]*\$?([\d,]+\.?\d*)', pdf_text)
-                                if total_match:
-                                    data['TotalMSRP'] = float(total_match.group(1).replace(',', ''))
+                                # === ENHANCED FIELDS ===
+                                
+                                # Extract seating configuration
+                                seats_patterns = [
+                                    r'(\d+)\s*[-\s]*PASSENGER',
+                                    r'(\d+)\s*SEAT',
+                                    r'SEATING[:\s]*(\d+)',
+                                    r'(\d+)\s*PAX'
+                                ]
+                                for pattern in seats_patterns:
+                                    seats_match = re.search(pattern, pdf_text, re.IGNORECASE)
+                                    if seats_match:
+                                        data['Seats'] = f"{seats_match.group(1)}-Passenger"
+                                        break
+                                else:
+                                    data['Seats'] = None
+                                
+                                # Extract engine information
+                                engine_patterns = [
+                                    r'(\d+\.?\d*L?\s*V\d+.*?)(?:\n|ENGINE|HORSEPOWER)',
+                                    r'ENGINE[:\s]*([^\n]+)',
+                                    r'(\d+\.?\d*L.*?)(?:\s|$)',
+                                    r'(V\d+.*?)(?:\s|$)'
+                                ]
+                                for pattern in engine_patterns:
+                                    engine_match = re.search(pattern, pdf_text, re.IGNORECASE)
+                                    if engine_match:
+                                        engine_text = engine_match.group(1).strip()
+                                        if len(engine_text) > 3:  # Avoid matching single characters
+                                            data['Engine'] = engine_text
+                                            break
+                                else:
+                                    data['Engine'] = None
+                                
+                                # Extract horsepower
+                                hp_patterns = [
+                                    r'(\d+)\s*HP',
+                                    r'(\d+)\s*HORSEPOWER',
+                                    r'HORSEPOWER[:\s]*(\d+)',
+                                    r'(\d+)\s*BHP'
+                                ]
+                                for pattern in hp_patterns:
+                                    hp_match = re.search(pattern, pdf_text, re.IGNORECASE)
+                                    if hp_match:
+                                        data['Horsepower'] = f"{hp_match.group(1)} HP"
+                                        break
+                                else:
+                                    data['Horsepower'] = None
+                                
+                                # Extract MSRP breakdown
+                                base_msrp_patterns = [
+                                    r'BASE\s*MSRP[:\s]*\$?([\d,]+\.?\d*)',
+                                    r'BASE\s*PRICE[:\s]*\$?([\d,]+\.?\d*)',
+                                    r'MSRP[:\s]*\$?([\d,]+\.?\d*)',
+                                    r'STARTING\s*AT[:\s]*\$?([\d,]+\.?\d*)'
+                                ]
+                                for pattern in base_msrp_patterns:
+                                    base_match = re.search(pattern, pdf_text, re.IGNORECASE)
+                                    if base_match:
+                                        data['BaseMSRP'] = float(base_match.group(1).replace(',', ''))
+                                        break
+                                else:
+                                    data['BaseMSRP'] = None
+                                
+                                # Extract destination charge
+                                dest_patterns = [
+                                    r'DESTINATION[:\s]*\$?([\d,]+\.?\d*)',
+                                    r'FREIGHT[:\s]*\$?([\d,]+\.?\d*)',
+                                    r'DELIVERY[:\s]*\$?([\d,]+\.?\d*)',
+                                    r'DEST\.?\s*CHARGE[:\s]*\$?([\d,]+\.?\d*)'
+                                ]
+                                for pattern in dest_patterns:
+                                    dest_match = re.search(pattern, pdf_text, re.IGNORECASE)
+                                    if dest_match:
+                                        data['DestinationCharge'] = float(dest_match.group(1).replace(',', ''))
+                                        break
+                                else:
+                                    data['DestinationCharge'] = None
+                                
+                                # Extract total MSRP/price
+                                total_patterns = [
+                                    r'TOTAL\s*MSRP[:\s]*\$?([\d,]+\.?\d*)',
+                                    r'TOTAL\s*PRICE[:\s]*\$?([\d,]+\.?\d*)',
+                                    r'TOTAL[:\s]*\$?([\d,]+\.?\d*)',
+                                    r'FINAL\s*PRICE[:\s]*\$?([\d,]+\.?\d*)'
+                                ]
+                                for pattern in total_patterns:
+                                    total_match = re.search(pattern, pdf_text, re.IGNORECASE)
+                                    if total_match:
+                                        data['TotalMSRP'] = float(total_match.group(1).replace(',', ''))
+                                        break
                                 else:
                                     data['TotalMSRP'] = None
                                 
+                                # Extract packages (enhanced for Palisade-specific packages)
+                                package_patterns = [
+                                    r'([A-Z\s]+PACKAGE)',
+                                    r'TRIM\s*LEVEL[:\s]*([^\n$]+)',
+                                    r'PACKAGE[:\s]*([^\n$]+)'
+                                ]
+                                packages = []
+                                for pattern in package_patterns:
+                                    package_matches = re.findall(pattern, pdf_text, re.IGNORECASE)
+                                    for match in package_matches:
+                                        package_name = match.strip()
+                                        if len(package_name) > 3 and package_name not in packages:
+                                            packages.append(package_name)
+                                
+                                data['Packages'] = '; '.join(packages) if packages else None
+                                
+                                # Extract individual options with enhanced Palisade-specific patterns
+                                options = []
+                                
+                                # Specific accessory patterns from window stickers
+                                accessory_patterns = [
+                                    (r'Creamy White.*?\$\s*(\d+)', 'Creamy White Paint'),
+                                    (r'Carpeted Floor Mats.*?\$\s*(\d+)', 'Carpeted Floor Mats'),
+                                    (r'All Season Floor Liners.*?\$\s*(\d+)', 'All Season Floor Liners'),
+                                    (r'Cargo Blocks.*?\$\s*(\d+)', 'Cargo Blocks'),
+                                    (r'Cargo Net.*?\$\s*(\d+)', 'Cargo Net'),
+                                    (r'Cargo Organizer.*?\$\s*(\d+)', 'Cargo Organizer'),
+                                    (r'Cargo Tray.*?\$\s*(\d+)', 'Cargo Tray'),
+                                    (r'Cargo Cover.*?\$\s*(\d+)', 'Cargo Cover'),
+                                    (r'First Aid Kit.*?\$\s*(\d+)', 'First Aid Kit'),
+                                    (r'Severe Weather Kit.*?\$\s*(\d+)', 'Severe Weather Kit')
+                                ]
+                                
+                                for pattern, option_name in accessory_patterns:
+                                    match = re.search(pattern, pdf_text, re.IGNORECASE)
+                                    if match:
+                                        price = match.group(1)
+                                        options.append(f"{option_name}: ${price}")
+                                
+                                # General option patterns as fallback
+                                general_patterns = [
+                                    r'\$\s*(\d+)\.00\s*([A-Z][^\n$]+)',  # Price followed by option name
+                                    r'([A-Z][^\n$]+)\s*\$\s*(\d+)\.00'   # Option name followed by price
+                                ]
+                                for pattern in general_patterns:
+                                    option_matches = re.findall(pattern, pdf_text)
+                                    for match in option_matches:
+                                        if len(match) == 2:
+                                            if match[0].isdigit():  # Price first
+                                                option_text = f"{match[1].strip()}: ${match[0]}"
+                                            else:  # Option name first
+                                                option_text = f"{match[0].strip()}: ${match[1]}"
+                                            if len(option_text) > 10 and option_text not in options:
+                                                options.append(option_text)
+                                
+                                data['Options'] = '; '.join(options[:15]) if options else None
+                                
+                                # === STANDARD FEATURES EXTRACTION ===
+                                # Extract standard features that differentiate trim levels
+                                
+                                # Wheel size (major differentiator)
+                                wheel_patterns = [
+                                    r'(\d+)"\s*Alloy Wheels',
+                                    r'(\d+)-inch.*?[Ww]heels',
+                                    r'(\d+)"\s*[Ww]heels'
+                                ]
+                                wheel_size = None
+                                for pattern in wheel_patterns:
+                                    wheel_match = re.search(pattern, pdf_text, re.IGNORECASE)
+                                    if wheel_match:
+                                        wheel_size = f'{wheel_match.group(1)}"'
+                                        break
+                                
+                                # Seating material (key value differentiator)
+                                seating_material = None
+                                if re.search(r'Nappa Leather', pdf_text, re.IGNORECASE):
+                                    seating_material = 'Nappa Leather'
+                                elif re.search(r'Leather-Trimmed', pdf_text, re.IGNORECASE):
+                                    seating_material = 'Leather'
+                                elif re.search(r'H-Tex', pdf_text, re.IGNORECASE):
+                                    seating_material = 'H-Tex'
+                                
+                                # Sunroof type
+                                sunroof_type = None
+                                if re.search(r'Dual-Pane Sunroof', pdf_text, re.IGNORECASE):
+                                    sunroof_type = 'Dual-Pane'
+                                elif re.search(r'Power Sunroof', pdf_text, re.IGNORECASE):
+                                    sunroof_type = 'Power'
+                                
+                                # Safety system differentiation
+                                blind_spot_type = None
+                                if re.search(r'Blind-Spot Collision-Avoidance', pdf_text, re.IGNORECASE):
+                                    blind_spot_type = 'Collision-Avoidance'
+                                elif re.search(r'Blind-Spot Collision Warning', pdf_text, re.IGNORECASE):
+                                    blind_spot_type = 'Warning'
+                                
+                                # Audio system
+                                audio_system = None
+                                if re.search(r'Bose.*Premium Audio', pdf_text, re.IGNORECASE):
+                                    audio_system = 'Bose Premium'
+                                else:
+                                    audio_system = 'Standard'
+                                
+                                # Premium features (boolean)
+                                front_seat_ventilation = bool(re.search(r'Ventilated.*Front Seats', pdf_text, re.IGNORECASE))
+                                seat_memory = bool(re.search(r'Memory.*Seat', pdf_text, re.IGNORECASE))
+                                ergo_motion = bool(re.search(r'Ergo Motion', pdf_text, re.IGNORECASE))
+                                relaxation_seats = bool(re.search(r'Relaxation Seats', pdf_text, re.IGNORECASE))
+                                head_up_display = bool(re.search(r'Head-Up Display', pdf_text, re.IGNORECASE))
+                                front_rear_dashcam = bool(re.search(r'Front & Rear Dashcam', pdf_text, re.IGNORECASE))
+                                remote_smart_park = bool(re.search(r'Remote Smart Park', pdf_text, re.IGNORECASE))
+                                homelink_mirror = bool(re.search(r'HomeLink', pdf_text, re.IGNORECASE))
+                                parking_collision_avoidance = bool(re.search(r'Parking Collision-Avoidance', pdf_text, re.IGNORECASE))
+                                parking_side_warning = bool(re.search(r'Parking Distance Warning.*Side', pdf_text, re.IGNORECASE))
+                                
+                                # Store standard features
+                                data['StandardFeatures'] = {
+                                    'wheel_size': wheel_size,
+                                    'sunroof_type': sunroof_type,
+                                    'seating_material': seating_material,
+                                    'front_seat_ventilation': front_seat_ventilation,
+                                    'seat_memory': seat_memory,
+                                    'ergo_motion': ergo_motion,
+                                    'relaxation_seats': relaxation_seats,
+                                    'blind_spot_type': blind_spot_type,
+                                    'parking_collision_avoidance': parking_collision_avoidance,
+                                    'parking_side_warning': parking_side_warning,
+                                    'audio_system': audio_system,
+                                    'head_up_display': head_up_display,
+                                    'front_rear_dashcam': front_rear_dashcam,
+                                    'remote_smart_park': remote_smart_park,
+                                    'homelink_mirror': homelink_mirror
+                                }
+                                
+                                # === INDIVIDUAL OPTIONS EXTRACTION ===
+                                # Extract specific accessory options with costs
+                                individual_options = {}
+                                
+                                # Paint options
+                                if re.search(r'Creamy White.*?\$\s*(\d+)', pdf_text, re.IGNORECASE):
+                                    paint_match = re.search(r'Creamy White.*?\$\s*(\d+)', pdf_text, re.IGNORECASE)
+                                    individual_options['premium_paint'] = True
+                                    individual_options['premium_paint_cost'] = float(paint_match.group(1))
+                                    individual_options['paint_name'] = 'Creamy White'
+                                
+                                # Floor protection
+                                floor_mat_match = re.search(r'(?:Carpeted Floor Mats|All Season Floor Liners).*?\$\s*(\d+)', pdf_text, re.IGNORECASE)
+                                if floor_mat_match:
+                                    individual_options['floor_mats'] = True
+                                    individual_options['floor_mats_cost'] = float(floor_mat_match.group(1))
+                                
+                                # Cargo accessories
+                                cargo_patterns = [
+                                    ('cargo_net', r'Cargo Net.*?\$\s*(\d+)'),
+                                    ('cargo_tray', r'Cargo Tray.*?\$\s*(\d+)'),
+                                    ('cargo_cover', r'Cargo Cover.*?\$\s*(\d+)'),
+                                    ('cargo_blocks', r'Cargo Blocks.*?\$\s*(\d+)')
+                                ]
+                                
+                                for option_key, pattern in cargo_patterns:
+                                    match = re.search(pattern, pdf_text, re.IGNORECASE)
+                                    if match:
+                                        individual_options[option_key] = True
+                                        individual_options[f'{option_key}_cost'] = float(match.group(1))
+                                
+                                # Emergency/weather kits
+                                first_aid_match = re.search(r'First Aid Kit.*?\$\s*(\d+)', pdf_text, re.IGNORECASE)
+                                if first_aid_match:
+                                    individual_options['first_aid_kit'] = True
+                                    individual_options['first_aid_kit_cost'] = float(first_aid_match.group(1))
+                                
+                                weather_kit_match = re.search(r'Severe Weather Kit.*?\$\s*(\d+)', pdf_text, re.IGNORECASE)
+                                if weather_kit_match:
+                                    individual_options['severe_weather_kit'] = True
+                                    individual_options['severe_weather_kit_cost'] = float(weather_kit_match.group(1))
+                                
+                                # Calculate totals
+                                total_options_cost = sum(v for k, v in individual_options.items() if k.endswith('_cost'))
+                                options_count = sum(1 for k, v in individual_options.items() if k.endswith('_cost') and v > 0)
+                                
+                                individual_options['total_options_cost'] = total_options_cost
+                                individual_options['options_count'] = options_count
+                                
+                                data['IndividualOptions'] = individual_options
+                                
                                 return data
                             
-                            # Extract data from PDF
-                            parsed_data = extract_basic_data(text)
+                            # Extract comprehensive data from PDF
+                            parsed_data = extract_comprehensive_data(text)
                             
                             # Check both basic VIN existence and enhanced features
                             vin_exists = db.vin_exists(vin)
@@ -879,8 +1172,9 @@ if DATABASE_AVAILABLE and st.session_state.get('show_admin', False):
                                         verified=True  # PDF data is verified
                                     )
                                 
-                                # Add enhanced features if basic data was successful or already exists
+                                # Add comprehensive data if basic data was successful or already exists
                                 if basic_data_success or vin_exists:
+                                    # Store enhanced features
                                     enhanced_success, enhanced_message = db.add_enhanced_features(
                                         vin=vin,
                                         seats=parsed_data.get('Seats'),
@@ -894,20 +1188,58 @@ if DATABASE_AVAILABLE and st.session_state.get('show_admin', False):
                                         parse_notes=f"Parsed from {uploaded_file.name}"
                                     )
                                     
-                                    if enhanced_success:
+                                    # Store standard features (trim-level differentiation)
+                                    standard_features_success = True
+                                    standard_features_message = ""
+                                    if parsed_data.get('StandardFeatures'):
+                                        standard_features_success, standard_features_message = db.add_standard_features(
+                                            vin=vin,
+                                            **parsed_data['StandardFeatures']
+                                        )
+                                    
+                                    # Store individual options (accessory pricing)
+                                    individual_options_success = True
+                                    individual_options_message = ""
+                                    if parsed_data.get('IndividualOptions'):
+                                        individual_options_success, individual_options_message = db.add_vehicle_options(
+                                            vin=vin,
+                                            **parsed_data['IndividualOptions']
+                                        )
+                                    
+                                    # Check overall success
+                                    if enhanced_success and standard_features_success and individual_options_success:
                                         action = "Added" if not vin_exists else "Enhanced existing"
+                                        feature_counts = []
+                                        if parsed_data.get('StandardFeatures'):
+                                            feature_count = sum(1 for v in parsed_data['StandardFeatures'].values() if v)
+                                            feature_counts.append(f"{feature_count} standard features")
+                                        if parsed_data.get('IndividualOptions', {}).get('options_count', 0) > 0:
+                                            option_count = parsed_data['IndividualOptions']['options_count']
+                                            feature_counts.append(f"{option_count} individual options")
+                                        
+                                        feature_summary = ", ".join(feature_counts) if feature_counts else "basic data"
+                                        
                                         results.append({
                                             'file': uploaded_file.name,
                                             'status': 'success',
-                                            'message': f'{action} VIN {vin} with PDF data',
+                                            'message': f'{action} VIN {vin} with comprehensive data ({feature_summary})',
                                             'vin': vin,
                                             'data': parsed_data
                                         })
                                     else:
+                                        # Partial success - report what failed
+                                        errors = []
+                                        if not enhanced_success:
+                                            errors.append(f"Enhanced: {enhanced_message}")
+                                        if not standard_features_success:
+                                            errors.append(f"Standard: {standard_features_message}")
+                                        if not individual_options_success:
+                                            errors.append(f"Options: {individual_options_message}")
+                                        
                                         results.append({
                                             'file': uploaded_file.name,
-                                            'status': 'error',
-                                            'message': f'Enhanced features error: {enhanced_message}',
+                                            'status': 'warning',
+                                            'message': f'Partial success for VIN {vin}. Errors: {"; ".join(errors)}',
                                             'vin': vin
                                         })
                                 else:
