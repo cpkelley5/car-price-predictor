@@ -158,7 +158,7 @@ def predict_palisade_price(features_df):
     
     return np.array(predictions)
 
-# Initialize database if available - v2.0 with enhanced features table creation
+# Initialize database if available - v2.1 with missing table error handling
 @st.cache_resource
 def init_app_database():
     if DATABASE_AVAILABLE:
@@ -648,24 +648,28 @@ if DATABASE_AVAILABLE and st.session_state.get('show_admin', False):
         except Exception as e:
             st.error(f"Enhanced data error: {e}")
         
-        # Show options and standard features data (if methods exist)
+        # Show options and standard features data (gracefully handle missing tables)
         try:
             options_data = db.get_vehicle_options()
             if not options_data.empty:
                 st.subheader("Vehicle Options Data")
                 st.write(f"🔧 {len(options_data)} vehicles with normalized option data")
-        except AttributeError:
-            # Method doesn't exist yet in production database
-            pass
+                st.dataframe(options_data.head(5), use_container_width=True)
+            else:
+                st.info("No vehicle options data available yet. This data comes from advanced PDF parsing.")
+        except Exception as e:
+            st.warning("Vehicle options data temporarily unavailable. Advanced features will be enabled in future updates.")
             
         try:
             standard_features_data = db.get_standard_features()
             if not standard_features_data.empty:
                 st.subheader("Standard Features Data")
                 st.write(f"⭐ {len(standard_features_data)} vehicles with standard feature data")
-        except AttributeError:
-            # Method doesn't exist yet in production database
-            pass
+                st.dataframe(standard_features_data.head(5), use_container_width=True)
+            else:
+                st.info("No standard features data available yet. This data comes from advanced PDF parsing.")
+        except Exception as e:
+            st.warning("Standard features data temporarily unavailable. Advanced features will be enabled in future updates.")
         
         # PDF Upload Section
         st.divider()
