@@ -532,12 +532,13 @@ if DATABASE_AVAILABLE and st.session_state.get('show_admin', False):
         # Basic stats
         stats = db.get_data_stats()
         
-        # Get enhanced features count
+        # Get enhanced features count (handle missing table)
         try:
             enhanced_data = db.get_enhanced_features()
             enhanced_count = len(enhanced_data) if not enhanced_data.empty else 0
-        except:
+        except Exception as e:
             enhanced_count = 0
+            enhanced_data = None
         
         col1, col2, col3, col4, col5 = st.columns(5)
         
@@ -557,9 +558,14 @@ if DATABASE_AVAILABLE and st.session_state.get('show_admin', False):
         st.subheader("Recent Vehicle Submissions")
         all_data = db.get_all_data()
         if not all_data.empty:
-            # Get enhanced features data to check which VINs are enhanced
-            enhanced_data = db.get_enhanced_features()
-            enhanced_vins = set(enhanced_data['vin'].tolist()) if not enhanced_data.empty else set()
+            # Get enhanced features data to check which VINs are enhanced (handle missing table)
+            try:
+                if enhanced_data is None:  # Already failed above, don't retry
+                    enhanced_vins = set()
+                else:
+                    enhanced_vins = set(enhanced_data['vin'].tolist()) if not enhanced_data.empty else set()
+            except:
+                enhanced_vins = set()
             
             # Show last 10 submissions with enhanced display
             display_data = all_data.head(10)[['vin', 'trim', 'drivetrain', 'price', 'ext_color', 'zip_code', 'verified', 'submission_date']].copy()

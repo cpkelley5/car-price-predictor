@@ -304,6 +304,30 @@ class PalisadeDatabase:
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
+            
+            # Check if table exists, create if missing
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='enhanced_vehicle_features'")
+            if not cursor.fetchone():
+                # Create the table
+                cursor.execute('''
+                    CREATE TABLE enhanced_vehicle_features (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        vin TEXT UNIQUE NOT NULL,
+                        seats TEXT,
+                        engine TEXT,
+                        horsepower TEXT,
+                        base_msrp REAL,
+                        destination_charge REAL,
+                        total_msrp REAL,
+                        packages TEXT,
+                        options TEXT,
+                        sticker_url TEXT,
+                        parse_notes TEXT,
+                        scrape_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (vin) REFERENCES vehicle_data (vin)
+                    )
+                ''')
+            
             cursor.execute('''
                 INSERT OR REPLACE INTO enhanced_vehicle_features 
                 (vin, seats, engine, horsepower, base_msrp, destination_charge, 
@@ -315,21 +339,41 @@ class PalisadeDatabase:
             conn.close()
             return True, "Enhanced features added successfully"
         except Exception as e:
+            try:
+                conn.close()
+            except:
+                pass
             return False, f"Database error: {str(e)}"
     
     def get_enhanced_features(self, vin=None):
         """Get enhanced features data"""
-        conn = sqlite3.connect(self.db_path)
-        if vin:
-            df = pd.read_sql_query('''
-                SELECT * FROM enhanced_vehicle_features WHERE vin = ?
-            ''', conn, params=(vin,))
-        else:
-            df = pd.read_sql_query('''
-                SELECT * FROM enhanced_vehicle_features ORDER BY scrape_date DESC
-            ''', conn)
-        conn.close()
-        return df
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # Check if table exists
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='enhanced_vehicle_features'")
+            if not cursor.fetchone():
+                # Table doesn't exist, return empty DataFrame
+                conn.close()
+                return pd.DataFrame()
+            
+            if vin:
+                df = pd.read_sql_query('''
+                    SELECT * FROM enhanced_vehicle_features WHERE vin = ?
+                ''', conn, params=(vin,))
+            else:
+                df = pd.read_sql_query('''
+                    SELECT * FROM enhanced_vehicle_features ORDER BY scrape_date DESC
+                ''', conn)
+            conn.close()
+            return df
+        except Exception as e:
+            try:
+                conn.close()
+            except:
+                pass
+            return pd.DataFrame()
     
     def add_vehicle_options(self, vin, **options):
         """Add normalized vehicle options to database"""
