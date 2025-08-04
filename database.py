@@ -347,17 +347,21 @@ class PalisadeDatabase:
     
     def get_enhanced_features(self, vin=None):
         """Get enhanced features data"""
+        conn = None
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
-            # Check if table exists
+            # Check if table exists first
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='enhanced_vehicle_features'")
-            if not cursor.fetchone():
+            table_exists = cursor.fetchone() is not None
+            
+            if not table_exists:
                 # Table doesn't exist, return empty DataFrame
                 conn.close()
                 return pd.DataFrame()
             
+            # Table exists, proceed with query
             if vin:
                 df = pd.read_sql_query('''
                     SELECT * FROM enhanced_vehicle_features WHERE vin = ?
@@ -366,13 +370,17 @@ class PalisadeDatabase:
                 df = pd.read_sql_query('''
                     SELECT * FROM enhanced_vehicle_features ORDER BY scrape_date DESC
                 ''', conn)
+            
             conn.close()
             return df
+            
         except Exception as e:
-            try:
-                conn.close()
-            except:
-                pass
+            if conn:
+                try:
+                    conn.close()
+                except:
+                    pass
+            # Return empty DataFrame on any error
             return pd.DataFrame()
     
     def add_vehicle_options(self, vin, **options):
