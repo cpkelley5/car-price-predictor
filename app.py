@@ -602,14 +602,45 @@ if DATABASE_AVAILABLE and st.session_state.get('show_admin', False):
         )
         
         if uploaded_files:
-            # Use session state to prevent infinite reprocessing
+            # Use session state to track processing and store results
             if 'processed_files' not in st.session_state:
-                st.session_state.processed_files = set()
+                st.session_state.processed_files = {}  # Changed to dict to store results
             
             files_to_process = []
+            already_processed = []
+            
             for uploaded_file in uploaded_files:
                 if uploaded_file.name not in st.session_state.processed_files:
                     files_to_process.append(uploaded_file)
+                else:
+                    already_processed.append(uploaded_file.name)
+            
+            # Show results for already processed files
+            if already_processed:
+                st.info(f"📋 {len(already_processed)} file(s) already processed in this session:")
+                for filename in already_processed:
+                    result = st.session_state.processed_files[filename]
+                    if result['status'] == 'success':
+                        with st.expander(f"✅ {filename} (VIN: {result.get('vin', 'N/A')}) - Previously Processed"):
+                            st.success(result['message'])
+                            if 'data' in result:
+                                data = result['data']
+                                col1, col2 = st.columns(2)
+                                with col1:
+                                    st.write(f"**Trim:** {data.get('Trim', 'N/A')}")
+                                    st.write(f"**Drivetrain:** {data.get('Drivetrain', 'N/A')}")
+                                    st.write(f"**City MPG:** {data.get('CityMPG', 'N/A')}")
+                                with col2:
+                                    st.write(f"**Exterior Color:** {data.get('ExteriorColor', 'N/A')}")
+                                    st.write(f"**Interior Color:** {data.get('InteriorColor', 'N/A')}")
+                                    if data.get('TotalMSRP'):
+                                        st.write(f"**Total MSRP:** ${data['TotalMSRP']:,.0f}")
+                    elif result['status'] == 'info':
+                        with st.expander(f"ℹ️ {filename} (VIN: {result.get('vin', 'N/A')}) - Previously Processed"):
+                            st.info(result['message'])
+                    else:
+                        with st.expander(f"❌ {filename} - Previously Processed"):
+                            st.error(result['message'])
             
             if files_to_process:
                 with st.spinner("Processing PDF files..."):
@@ -777,9 +808,10 @@ if DATABASE_AVAILABLE and st.session_state.get('show_admin', False):
                                 'vin': None
                             })
                     
-                    # Mark files as processed
-                    for uploaded_file in files_to_process:
-                        st.session_state.processed_files.add(uploaded_file.name)
+                    # Store results for each processed file
+                    for i, uploaded_file in enumerate(files_to_process):
+                        if i < len(results):
+                            st.session_state.processed_files[uploaded_file.name] = results[i]
                     
                     # Display results
                     success_count = sum(1 for r in results if r['status'] == 'success')
@@ -811,13 +843,11 @@ if DATABASE_AVAILABLE and st.session_state.get('show_admin', False):
                         else:
                             with st.expander(f"❌ {result['file']}"):
                                 st.error(result['message'])
-            else:
-                st.info("All uploaded files have already been processed in this session.")
         
         # Clear processed files button
         if 'processed_files' in st.session_state and st.session_state.processed_files:
             if st.button("🗑️ Clear Processed Files List"):
-                st.session_state.processed_files = set()
+                st.session_state.processed_files = {}
                 st.rerun()
     
     with tab2:
