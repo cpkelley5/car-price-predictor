@@ -201,34 +201,32 @@ class PalisadeDatabase:
         if not (30000 <= price <= 80000):
             return False, "Price must be between $30,000 and $80,000"
         
-        # Insert data - try without zip_code first for compatibility
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
-            # First try without zip_code (for production compatibility)
-            try:
+            # Check if zip_code column exists in production
+            cursor.execute("PRAGMA table_info(vehicle_data)")
+            columns = [column[1] for column in cursor.fetchall()]
+            
+            if 'zip_code' in columns:
+                # Full schema with zip_code
+                cursor.execute('''
+                    INSERT INTO vehicle_data 
+                    (vin, price, trim, drivetrain, city_mpg, ext_color, int_color, zip_code, verified)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (vin, price, trim, drivetrain, city_mpg, ext_color, int_color, zip_code, verified))
+            else:
+                # Production schema without zip_code
                 cursor.execute('''
                     INSERT INTO vehicle_data 
                     (vin, price, trim, drivetrain, city_mpg, ext_color, int_color, verified)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (vin, price, trim, drivetrain, city_mpg, ext_color, int_color, verified))
-                conn.commit()
-                conn.close()
-                return True, "Vehicle data added successfully"
-            except sqlite3.OperationalError as e:
-                if "no column named" in str(e).lower():
-                    # If the error is about missing columns, try with zip_code
-                    cursor.execute('''
-                        INSERT INTO vehicle_data 
-                        (vin, price, trim, drivetrain, city_mpg, ext_color, int_color, zip_code, verified)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ''', (vin, price, trim, drivetrain, city_mpg, ext_color, int_color, zip_code, verified))
-                    conn.commit()
-                    conn.close()
-                    return True, "Vehicle data added successfully"
-                else:
-                    raise e
+            
+            conn.commit()
+            conn.close()
+            return True, "Vehicle data added successfully"
                     
         except Exception as e:
             try:
@@ -416,7 +414,15 @@ class PalisadeDatabase:
     def get_training_data_with_options(self, verified_only=False):
         """Get training data enhanced with normalized option and standard feature data"""
         conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
         where_clause = "WHERE vd.verified = TRUE" if verified_only else ""
+        
+        # Check if zip_code column exists
+        cursor.execute("PRAGMA table_info(vehicle_data)")
+        columns = [column[1] for column in cursor.fetchall()]
+        has_zip_code = 'zip_code' in columns
+        
+        zip_code_select = "vd.zip_code as ZipCode," if has_zip_code else "NULL as ZipCode,"
         
         df = pd.read_sql_query(f'''
             SELECT 
@@ -426,7 +432,7 @@ class PalisadeDatabase:
                 vd.city_mpg as City_mpg, 
                 vd.ext_color as ExtColor, 
                 vd.int_color as IntColor,
-                vd.zip_code as ZipCode,
+                {zip_code_select}
                 
                 -- Options
                 COALESCE(vo.premium_paint, 0) as PremiumPaint,
@@ -525,17 +531,31 @@ class PalisadeDatabase:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
+            # Check if zip_code column exists in production
+            cursor.execute("PRAGMA table_info(vehicle_data)")
+            columns = [column[1] for column in cursor.fetchall()]
+            has_zip_code = 'zip_code' in columns
+            
             added_count = 0
             for _, row in df.iterrows():
                 # Check if VIN already exists
                 if not self.vin_exists(row['VIN']):
-                    cursor.execute('''
-                        INSERT INTO vehicle_data 
-                        (vin, price, trim, drivetrain, city_mpg, ext_color, int_color, zip_code, verified, source)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ''', (row['VIN'], row['Price'], row['Trim'], row['Drivetrain'], 
-                          row['City_mpg'], row['ExtColor'], row['IntColor'], 
-                          row.get('ZipCode', None), True, 'initial_data'))
+                    if has_zip_code:
+                        cursor.execute('''
+                            INSERT INTO vehicle_data 
+                            (vin, price, trim, drivetrain, city_mpg, ext_color, int_color, zip_code, verified, source)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ''', (row['VIN'], row['Price'], row['Trim'], row['Drivetrain'], 
+                              row['City_mpg'], row['ExtColor'], row['IntColor'], 
+                              row.get('ZipCode', None), True, 'initial_data'))
+                    else:
+                        cursor.execute('''
+                            INSERT INTO vehicle_data 
+                            (vin, price, trim, drivetrain, city_mpg, ext_color, int_color, verified, source)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ''', (row['VIN'], row['Price'], row['Trim'], row['Drivetrain'], 
+                              row['City_mpg'], row['ExtColor'], row['IntColor'], 
+                              True, 'initial_data'))
                     added_count += 1
             
             conn.commit()
