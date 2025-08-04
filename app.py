@@ -774,8 +774,13 @@ if DATABASE_AVAILABLE and st.session_state.get('show_admin', False):
                             
                             # Check both basic VIN existence and enhanced features
                             vin_exists = db.vin_exists(vin)
-                            enhanced_features = db.get_enhanced_features(vin)
-                            has_enhanced_features = len(enhanced_features) > 0
+                            try:
+                                enhanced_features = db.get_enhanced_features(vin)
+                                has_enhanced_features = len(enhanced_features) > 0
+                            except Exception as e:
+                                # Fallback if enhanced features table doesn't exist
+                                enhanced_features = pd.DataFrame()
+                                has_enhanced_features = False
                             
                             if has_enhanced_features:
                                 results.append({
