@@ -750,7 +750,6 @@ if DATABASE_AVAILABLE and st.session_state.get('show_admin', False):
                                     city_mpg=parsed_data.get('CityMPG', 19),
                                     ext_color=parsed_data.get('ExteriorColor', 'Unknown'),
                                     int_color=parsed_data.get('InteriorColor', 'Unknown'),
-                                    zip_code='20743',  # Dealer ZIP
                                     verified=True  # PDF data is verified
                                 )
                                 
