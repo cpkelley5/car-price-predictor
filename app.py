@@ -531,15 +531,25 @@ if DATABASE_AVAILABLE and st.session_state.get('show_admin', False):
         
         # Basic stats
         stats = db.get_data_stats()
-        col1, col2, col3, col4 = st.columns(4)
+        
+        # Get enhanced features count
+        try:
+            enhanced_data = db.get_enhanced_features()
+            enhanced_count = len(enhanced_data) if not enhanced_data.empty else 0
+        except:
+            enhanced_count = 0
+        
+        col1, col2, col3, col4, col5 = st.columns(5)
         
         with col1:
             st.metric("Total VINs", stats['total_records'])
         with col2:
-            st.metric("Verified Records", stats['verified_records'])
+            st.metric("Enhanced VINs", enhanced_count)
         with col3:
-            st.metric("Recent Submissions", stats['recent_submissions'])
+            st.metric("Verified Records", stats['verified_records'])
         with col4:
+            st.metric("Recent Submissions", stats['recent_submissions'])
+        with col5:
             if stats['total_records'] > 0:
                 st.metric("Avg Price", f"${stats['avg_price']:,.0f}")
         
@@ -547,9 +557,19 @@ if DATABASE_AVAILABLE and st.session_state.get('show_admin', False):
         st.subheader("Recent Vehicle Submissions")
         all_data = db.get_all_data()
         if not all_data.empty:
+            # Get enhanced features data to check which VINs are enhanced
+            enhanced_data = db.get_enhanced_features()
+            enhanced_vins = set(enhanced_data['vin'].tolist()) if not enhanced_data.empty else set()
+            
             # Show last 10 submissions with enhanced display
-            display_data = all_data.head(10)[['vin', 'trim', 'drivetrain', 'price', 'ext_color', 'zip_code', 'verified', 'submission_date']]
-            display_data.columns = ['VIN', 'Trim', 'Drivetrain', 'Price ($)', 'Color', 'ZIP', 'Verified', 'Submitted']
+            display_data = all_data.head(10)[['vin', 'trim', 'drivetrain', 'price', 'ext_color', 'zip_code', 'verified', 'submission_date']].copy()
+            
+            # Add Enhanced column
+            display_data['enhanced'] = display_data['vin'].apply(lambda x: '✅ Yes' if x in enhanced_vins else '❌ No')
+            
+            # Reorder and rename columns
+            display_data = display_data[['vin', 'trim', 'drivetrain', 'price', 'ext_color', 'zip_code', 'verified', 'enhanced', 'submission_date']]
+            display_data.columns = ['VIN', 'Trim', 'Drivetrain', 'Price ($)', 'Color', 'ZIP', 'Verified', 'Enhanced', 'Submitted']
             st.dataframe(display_data, use_container_width=True)
         else:
             st.info("No vehicle submissions yet. Use the main prediction tool or upload window sticker PDFs to start building the database!")
