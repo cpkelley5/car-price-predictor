@@ -389,6 +389,51 @@ class PalisadeDatabase:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
+            # Check if table exists, create if missing
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='vehicle_options'")
+            if not cursor.fetchone():
+                # Create the table
+                cursor.execute('''
+                    CREATE TABLE vehicle_options (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        vin TEXT NOT NULL,
+                        
+                        -- Paint Options
+                        premium_paint BOOLEAN DEFAULT FALSE,
+                        premium_paint_cost REAL DEFAULT 0,
+                        paint_name TEXT,
+                        
+                        -- Floor Protection
+                        floor_mats BOOLEAN DEFAULT FALSE,
+                        floor_mats_cost REAL DEFAULT 0,
+                        
+                        -- Cargo Options
+                        cargo_net BOOLEAN DEFAULT FALSE,
+                        cargo_net_cost REAL DEFAULT 0,
+                        cargo_tray BOOLEAN DEFAULT FALSE,
+                        cargo_tray_cost REAL DEFAULT 0,
+                        cargo_cover BOOLEAN DEFAULT FALSE,
+                        cargo_cover_cost REAL DEFAULT 0,
+                        cargo_blocks BOOLEAN DEFAULT FALSE,
+                        cargo_blocks_cost REAL DEFAULT 0,
+                        
+                        -- Safety & Emergency
+                        first_aid_kit BOOLEAN DEFAULT FALSE,
+                        first_aid_kit_cost REAL DEFAULT 0,
+                        
+                        -- Weather Protection
+                        severe_weather_kit BOOLEAN DEFAULT FALSE,
+                        severe_weather_kit_cost REAL DEFAULT 0,
+                        
+                        -- Totals
+                        total_options_cost REAL DEFAULT 0,
+                        options_count INTEGER DEFAULT 0,
+                        
+                        created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (vin) REFERENCES vehicle_data (vin)
+                    )
+                ''')
+            
             # Calculate totals
             total_cost = sum(v for k, v in options.items() if k.endswith('_cost') and v)
             options_count = sum(1 for k, v in options.items() if k.endswith('_cost') and v > 0)
@@ -409,6 +454,10 @@ class PalisadeDatabase:
             conn.close()
             return True, "Vehicle options added successfully"
         except Exception as e:
+            try:
+                conn.close()
+            except:
+                pass
             return False, f"Database error: {str(e)}"
     
     def get_vehicle_options(self, vin=None):
@@ -455,6 +504,43 @@ class PalisadeDatabase:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
+            # Check if table exists, create if missing
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='standard_features'")
+            if not cursor.fetchone():
+                # Create the table
+                cursor.execute('''
+                    CREATE TABLE standard_features (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        vin TEXT NOT NULL,
+                        
+                        -- Wheel & Exterior
+                        wheel_size TEXT,  -- "18", "20", "21"
+                        sunroof_type TEXT,  -- "Power", "Dual-Pane"
+                        
+                        -- Seating & Interior 
+                        seating_material TEXT,  -- "H-Tex", "Leather", "Nappa Leather"
+                        front_seat_ventilation BOOLEAN DEFAULT FALSE,
+                        seat_memory BOOLEAN DEFAULT FALSE,
+                        ergo_motion BOOLEAN DEFAULT FALSE,
+                        relaxation_seats BOOLEAN DEFAULT FALSE,
+                        
+                        -- Safety Features
+                        blind_spot_type TEXT,  -- "Warning", "Collision-Avoidance"
+                        parking_collision_avoidance BOOLEAN DEFAULT FALSE,
+                        parking_side_warning BOOLEAN DEFAULT FALSE,
+                        
+                        -- Technology
+                        audio_system TEXT,  -- "Standard", "Bose Premium"
+                        head_up_display BOOLEAN DEFAULT FALSE,
+                        front_rear_dashcam BOOLEAN DEFAULT FALSE,
+                        remote_smart_park BOOLEAN DEFAULT FALSE,
+                        homelink_mirror BOOLEAN DEFAULT FALSE,
+                        
+                        created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (vin) REFERENCES vehicle_data (vin)
+                    )
+                ''')
+            
             # Prepare column names and values
             columns = list(features.keys())
             values = list(features.values())
@@ -471,6 +557,10 @@ class PalisadeDatabase:
             conn.close()
             return True, "Standard features added successfully"
         except Exception as e:
+            try:
+                conn.close()
+            except:
+                pass
             return False, f"Database error: {str(e)}"
     
     def get_standard_features(self, vin=None):
