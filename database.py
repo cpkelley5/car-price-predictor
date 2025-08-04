@@ -201,34 +201,40 @@ class PalisadeDatabase:
         if not (30000 <= price <= 80000):
             return False, "Price must be between $30,000 and $80,000"
         
-        # Insert data
+        # Insert data - try without zip_code first for compatibility
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
-            # Check if zip_code column exists
-            cursor.execute("PRAGMA table_info(vehicle_data)")
-            columns = [column[1] for column in cursor.fetchall()]
-            
-            if 'zip_code' in columns:
-                # Use full insert with zip_code
-                cursor.execute('''
-                    INSERT INTO vehicle_data 
-                    (vin, price, trim, drivetrain, city_mpg, ext_color, int_color, zip_code, verified)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ''', (vin, price, trim, drivetrain, city_mpg, ext_color, int_color, zip_code, verified))
-            else:
-                # Use insert without zip_code for older schema
+            # First try without zip_code (for production compatibility)
+            try:
                 cursor.execute('''
                     INSERT INTO vehicle_data 
                     (vin, price, trim, drivetrain, city_mpg, ext_color, int_color, verified)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (vin, price, trim, drivetrain, city_mpg, ext_color, int_color, verified))
-            
-            conn.commit()
-            conn.close()
-            return True, "Vehicle data added successfully"
+                conn.commit()
+                conn.close()
+                return True, "Vehicle data added successfully"
+            except sqlite3.OperationalError as e:
+                if "no column named" in str(e).lower():
+                    # If the error is about missing columns, try with zip_code
+                    cursor.execute('''
+                        INSERT INTO vehicle_data 
+                        (vin, price, trim, drivetrain, city_mpg, ext_color, int_color, zip_code, verified)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (vin, price, trim, drivetrain, city_mpg, ext_color, int_color, zip_code, verified))
+                    conn.commit()
+                    conn.close()
+                    return True, "Vehicle data added successfully"
+                else:
+                    raise e
+                    
         except Exception as e:
+            try:
+                conn.close()
+            except:
+                pass
             return False, f"Database error: {str(e)}"
     
     def get_all_data(self):
