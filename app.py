@@ -619,13 +619,34 @@ if DATABASE_AVAILABLE and st.session_state.get('show_admin', False):
                 st.subheader("Enhanced Vehicle Data")
                 st.write(f"📄 {len(enhanced_data)} vehicles with detailed window sticker data")
                 
-                # Show sample of enhanced data
-                enhanced_display = enhanced_data.head(5)[['vin', 'seats', 'base_msrp', 'total_msrp', 'scrape_date']]
-                enhanced_display.columns = ['VIN', 'Seats', 'Base MSRP', 'Total MSRP', 'Enhanced Date']
+                # Show enhanced data table with more details
+                enhanced_display = enhanced_data.head(5)[['vin', 'seats', 'engine', 'horsepower', 'base_msrp', 'destination_charge', 'total_msrp', 'packages', 'scrape_date']]
+                enhanced_display.columns = ['VIN', 'Seats', 'Engine', 'HP', 'Base MSRP', 'Dest Charge', 'Total MSRP', 'Packages', 'Enhanced Date']
                 st.dataframe(enhanced_display, use_container_width=True)
-        except Exception:
-            # Enhanced features table doesn't exist in production database yet
-            pass
+                
+                # Debug: Show raw data for most recent record
+                if len(enhanced_data) > 0:
+                    with st.expander("🔍 Debug: Latest Enhanced Record Details"):
+                        latest_record = enhanced_data.iloc[0]
+                        debug_cols = st.columns(2)
+                        with debug_cols[0]:
+                            st.write("**Extracted Data:**")
+                            st.json({
+                                'VIN': latest_record.get('vin'),
+                                'Seats': latest_record.get('seats'),
+                                'Engine': latest_record.get('engine'),
+                                'Horsepower': latest_record.get('horsepower'),
+                                'Base MSRP': latest_record.get('base_msrp'),
+                                'Destination Charge': latest_record.get('destination_charge'),
+                                'Total MSRP': latest_record.get('total_msrp'),
+                            })
+                        with debug_cols[1]:
+                            st.write("**Packages & Options:**")
+                            st.text_area("Packages", value=str(latest_record.get('packages', 'None')), height=100, disabled=True, key="debug_packages")
+                            st.text_area("Options", value=str(latest_record.get('options', 'None')), height=100, disabled=True, key="debug_options")
+                            st.text_area("Parse Notes", value=str(latest_record.get('parse_notes', 'None')), height=50, disabled=True, key="debug_notes")
+        except Exception as e:
+            st.error(f"Enhanced data error: {e}")
         
         # Show options and standard features data (if methods exist)
         try:
