@@ -746,57 +746,87 @@ if DATABASE_AVAILABLE and st.session_state.get('show_admin', False):
                             # Extract data from PDF
                             parsed_data = extract_basic_data(text)
                             
-                            # Check if VIN already exists
+                            # Check both basic VIN existence and enhanced features
                             vin_exists = db.vin_exists(vin)
+                            enhanced_features = db.get_enhanced_features(vin)
+                            has_enhanced_features = len(enhanced_features) > 0
                             
-                            if vin_exists:
+                            if has_enhanced_features:
                                 results.append({
                                     'file': uploaded_file.name,
                                     'status': 'info',
-                                    'message': f'VIN {vin} already exists in database',
+                                    'message': f'VIN {vin} already has enhanced features in database',
                                     'vin': vin
                                 })
                             else:
-                                # Use predicted price based on PDF data or total MSRP
-                                if parsed_data.get('TotalMSRP'):
-                                    price = parsed_data['TotalMSRP']
-                                else:
-                                    # Predict price using our model
-                                    import pandas as pd
-                                    features_df = pd.DataFrame([{
-                                        'Trim': parsed_data.get('Trim', 'Calligraphy'),
-                                        'Drivetrain': parsed_data.get('Drivetrain', 'FWD'),
-                                        'City_MPG': parsed_data.get('CityMPG', 19),
-                                        'Exterior_Color': parsed_data.get('ExteriorColor', 'Creamy White'),
-                                        'Interior_Color': parsed_data.get('InteriorColor', 'Black')
-                                    }])
-                                    price = float(predict_palisade_price(features_df))
+                                # Determine if we need to add basic data or just enhanced features
+                                basic_data_success = True
+                                basic_data_message = "VIN already exists"
                                 
-                                # Add to database
-                                success, message = db.add_vehicle_data(
-                                    vin=vin,
-                                    price=price,
-                                    trim=parsed_data.get('Trim', 'Unknown'),
-                                    drivetrain=parsed_data.get('Drivetrain', 'Unknown'),
-                                    city_mpg=parsed_data.get('CityMPG', 19),
-                                    ext_color=parsed_data.get('ExteriorColor', 'Unknown'),
-                                    int_color=parsed_data.get('InteriorColor', 'Unknown'),
-                                    verified=True  # PDF data is verified
-                                )
+                                if not vin_exists:
+                                    # Add basic vehicle data first
+                                    # Use predicted price based on PDF data or total MSRP
+                                    if parsed_data.get('TotalMSRP'):
+                                        price = parsed_data['TotalMSRP']
+                                    else:
+                                        # Predict price using our model
+                                        import pandas as pd
+                                        features_df = pd.DataFrame([{
+                                            'Trim': parsed_data.get('Trim', 'Calligraphy'),
+                                            'Drivetrain': parsed_data.get('Drivetrain', 'FWD'),
+                                            'City_MPG': parsed_data.get('CityMPG', 19),
+                                            'Exterior_Color': parsed_data.get('ExteriorColor', 'Creamy White'),
+                                            'Interior_Color': parsed_data.get('InteriorColor', 'Black')
+                                        }])
+                                        price = float(predict_palisade_price(features_df))
+                                    
+                                    basic_data_success, basic_data_message = db.add_vehicle_data(
+                                        vin=vin,
+                                        price=price,
+                                        trim=parsed_data.get('Trim', 'Unknown'),
+                                        drivetrain=parsed_data.get('Drivetrain', 'Unknown'),
+                                        city_mpg=parsed_data.get('CityMPG', 19),
+                                        ext_color=parsed_data.get('ExteriorColor', 'Unknown'),
+                                        int_color=parsed_data.get('InteriorColor', 'Unknown'),
+                                        verified=True  # PDF data is verified
+                                    )
                                 
-                                if success:
-                                    results.append({
-                                        'file': uploaded_file.name,
-                                        'status': 'success',
-                                        'message': f'Added VIN {vin} to database',
-                                        'vin': vin,
-                                        'data': parsed_data
-                                    })
+                                # Add enhanced features if basic data was successful or already exists
+                                if basic_data_success or vin_exists:
+                                    enhanced_success, enhanced_message = db.add_enhanced_features(
+                                        vin=vin,
+                                        seats=parsed_data.get('Seats'),
+                                        engine=parsed_data.get('Engine'),
+                                        horsepower=parsed_data.get('Horsepower'),
+                                        base_msrp=parsed_data.get('BaseMSRP'),
+                                        destination_charge=parsed_data.get('DestinationCharge'),
+                                        total_msrp=parsed_data.get('TotalMSRP'),
+                                        packages=parsed_data.get('Packages'),
+                                        options=parsed_data.get('Options'),
+                                        parse_notes=f"Parsed from {uploaded_file.name}"
+                                    )
+                                    
+                                    if enhanced_success:
+                                        action = "Added" if not vin_exists else "Enhanced existing"
+                                        results.append({
+                                            'file': uploaded_file.name,
+                                            'status': 'success',
+                                            'message': f'{action} VIN {vin} with PDF data',
+                                            'vin': vin,
+                                            'data': parsed_data
+                                        })
+                                    else:
+                                        results.append({
+                                            'file': uploaded_file.name,
+                                            'status': 'error',
+                                            'message': f'Enhanced features error: {enhanced_message}',
+                                            'vin': vin
+                                        })
                                 else:
                                     results.append({
                                         'file': uploaded_file.name,
                                         'status': 'error',
-                                        'message': f'Database error: {message}',
+                                        'message': f'Database error: {basic_data_message}',
                                         'vin': vin
                                     })
                                 
