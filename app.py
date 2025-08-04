@@ -158,11 +158,43 @@ def predict_palisade_price(features_df):
     
     return np.array(predictions)
 
-# Initialize database if available
+# Initialize database if available - v2.0 with enhanced features table creation
 @st.cache_resource
 def init_app_database():
     if DATABASE_AVAILABLE:
-        return initialize_database()
+        db = initialize_database()
+        # Ensure enhanced features table exists by testing it
+        try:
+            db.get_enhanced_features()
+        except:
+            # If it fails, try to create it by calling add_enhanced_features with dummy data
+            try:
+                import sqlite3
+                conn = sqlite3.connect(db.db_path)
+                cursor = conn.cursor()
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS enhanced_vehicle_features (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        vin TEXT UNIQUE NOT NULL,
+                        seats TEXT,
+                        engine TEXT,
+                        horsepower TEXT,
+                        base_msrp REAL,
+                        destination_charge REAL,
+                        total_msrp REAL,
+                        packages TEXT,
+                        options TEXT,
+                        sticker_url TEXT,
+                        parse_notes TEXT,
+                        scrape_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (vin) REFERENCES vehicle_data (vin)
+                    )
+                ''')
+                conn.commit()
+                conn.close()
+            except:
+                pass  # If this fails, the error handling in get_enhanced_features will handle it
+        return db
     return None
 
 # Load model function with enhanced fallback
